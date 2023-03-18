@@ -1,0 +1,132 @@
+use std::io::{Cursor, self};
+
+use bytes::{Buf, BytesMut};
+use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+use crate::DELIM;
+use crate::frame::{self, Frame};
+
+pub struct Connection {
+    stream: TcpStream,
+    buffer: BytesMut,
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Connection {
+        Connection {
+            stream,
+            buffer: BytesMut::with_capacity(4096),
+        }
+    }
+
+    /// Read a frame from the connection.
+    /// 
+    /// Returns `None` if EOF is read.
+    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
+        loop {
+            // Try to see if we can parse a frame from the current buffer.
+            if let Some(frame) = self.parse_frame()? {
+                return Ok(Some(frame));
+            }
+
+            // We don't have enough data to parse a frame.
+            // Attempt to read more data from the socket to the buffer.
+
+            if 0 == self.stream.read_buf(&mut self.buffer).await? {
+                // No more data was read from the buffer, meaning the remote end
+                // closed the connection. For this to have been a clean
+                // shutdown, there should be no data in the buffer, otherwise
+                // the peer closed the connection while sending a frame.
+                if self.buffer.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Err("Connection reset by peer".into());
+                }
+            }
+        }
+    }
+
+    /// Write a frame to the connection.
+    // pub async fn write_frame(&mut self, frame: &Frame) -> Result<()> {
+    //     // ...
+    // }
+
+    fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
+        use frame::Error::Incomplete;
+
+        let mut buf = Cursor::new(&self.buffer[..]);
+
+        match Frame::check(&mut buf) {
+            Ok(_) => {
+                // Get the current position in the buffer.
+                let len = buf.position() as usize;
+
+                // Reset to the beginning, to allow parsing.
+                buf.set_position(0);
+
+                // Parse the frame out of the buffer.
+                let frame = Frame::parse(&mut buf)?;
+
+                // Advance the buffer past this frame.
+                self.buffer.advance(len);
+
+                Ok(Some(frame))
+            },
+            Err(Incomplete) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
+        match frame {
+            Frame::Array(val) => {
+                self.stream.write_u8(b'*').await?;
+
+                self.write_decimal(val.len() as u64).await?;
+
+                for entry in &**val {
+                    self.write_value(entry).await?;
+                }
+            }
+            _ => self.write_value(frame).await?
+        }
+
+        Ok(())
+    }
+
+    async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
+        match frame {
+            Frame::Bulk(bytes) => {
+                let len = bytes.len();
+
+                self.stream.write_u8(b'$').await?;
+                self.write_decimal(len as u64).await?;
+
+                self.stream.write_all(bytes).await?;
+                self.stream.write_all(DELIM).await?;
+            },
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    async fn write_decimal(&mut self, val: u64) -> io::Result<()> {
+        use std::io::Write;
+
+        let mut buf = [0u8; 12];
+        let mut buf = Cursor::new(&mut buf[..]);
+        write!(&mut buf, "{}", val)?;
+
+        let pos = buf.position() as usize;
+        self.stream.write_all(&buf.get_ref()[..pos]).await?;
+        self.stream.write_all(DELIM).await?;
+
+        Ok(())
+    }
+
+    pub fn get_buf(&mut self) -> String {
+        String::from_utf8(self.buffer.to_vec()).unwrap()
+    }
+}

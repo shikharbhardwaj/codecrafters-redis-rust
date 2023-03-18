@@ -1,3 +1,17 @@
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {{
+        use std::time::SystemTime;
+
+        let now = SystemTime::now();
+        let timestamp = match now.duration_since(SystemTime::UNIX_EPOCH) {
+            Ok(duration) => duration.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        };
+        println!("[DEBUG][{}] {}", timestamp, format_args!($($arg)*));
+    }};
+}
+
 
 #[macro_export]
 macro_rules! info {
