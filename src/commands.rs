@@ -1,5 +1,3 @@
-use std::io::{Read, BufReader};
-
 use bytes::Bytes;
 
 use crate::{Connection, Frame, warn};
