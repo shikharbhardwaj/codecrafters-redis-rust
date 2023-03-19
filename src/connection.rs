@@ -59,11 +59,7 @@ impl Connection {
         }
     }
 
-    /// Write a frame to the connection.
-    // pub async fn write_frame(&mut self, frame: &Frame) -> Result<()> {
-    //     // ...
-    // }
-
+    /// Parse a frame to the connection.
     fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
         use frame::Error::Incomplete;
 
@@ -90,6 +86,7 @@ impl Connection {
         }
     }
 
+    /// Write a frame to the connection.
     pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
             Frame::Array(val) => {
@@ -116,6 +113,12 @@ impl Connection {
                 self.write_decimal(len as u64).await?;
 
                 self.stream.write_all(bytes).await?;
+                self.stream.write_all(DELIM).await?;
+            },
+            Frame::Simple(val) => {
+                self.stream.write_u8(b'+').await?;
+
+                self.stream.write_all(val.as_bytes()).await?;
                 self.stream.write_all(DELIM).await?;
             },
             _ => {}

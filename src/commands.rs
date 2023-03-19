@@ -12,9 +12,7 @@ impl Ping {
     }
 
     pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
-        let reply = Bytes::from_static(b"PONG");
-
-        dst.write_frame(&Frame::Bulk(reply)).await?;
+        dst.write_frame(&Frame::Simple("PONG".to_string())).await?;
         Ok(())
     }
 }

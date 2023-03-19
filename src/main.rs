@@ -1,4 +1,4 @@
-use redis_starter_rust::{Connection, Command, PIPELINE_MAX_COMMANDS};
+use redis_starter_rust::{Connection, Command};
 
 use tokio::net::{TcpListener, TcpStream};
 
@@ -12,6 +12,8 @@ async fn main() {
 
     loop {
         let (socket, _) = listener.accept().await.unwrap();
+        info!("Accepted connection");
+
         let res = handle_conn(socket).await;
 
         if res.is_err() {
@@ -35,6 +37,7 @@ async fn handle_conn(socket: TcpStream) -> redis_starter_rust::Result<()> {
         }
 
         if !conn.is_read_ready().await {
+            info!("Exiting handle_conn");
             break
         }
     }
