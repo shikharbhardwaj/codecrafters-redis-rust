@@ -1,6 +1,6 @@
-use redis_starter_rust::{Connection, Command};
+use redis_starter_rust::{Connection, Command, PIPELINE_MAX_COMMANDS};
 
-use tokio::{net::{TcpListener, TcpStream}};
+use tokio::net::{TcpListener, TcpStream};
 
 mod log;
 
@@ -21,16 +21,28 @@ async fn main() {
 }
 
 
+
 async fn handle_conn(socket: TcpStream) -> redis_starter_rust::Result<()> {
     let mut conn = Connection::new(socket);
-    if let Some(frame) = conn.read_frame().await? {
-        info!("Got frame: {:?}", frame);
+    let mut frames = vec![];
 
+    loop {
+        if let Some(frame) = conn.read_frame().await? {
+            info!("Got frame: {:?}", frame);
+            frames.push(frame);
+        } else {
+            return Err(format!("Could not parse frame, buffer contents: {}", conn.get_buf()).into())
+        }
+
+        if frames.len() >= PIPELINE_MAX_COMMANDS || !conn.is_read_ready().await {
+            break
+        }
+    }
+
+    for frame in frames {
         let cmd = Command::from_frame(frame)?;
 
         cmd.apply(& mut conn).await?
-    } else {
-        error!("Could not parse frame, buffer contents: {}", conn.get_buf());
     }
 
     Ok(())

@@ -2,7 +2,7 @@ use std::io::{Read, BufReader};
 
 use bytes::Bytes;
 
-use crate::{Connection, Frame};
+use crate::{Connection, Frame, warn};
 
 #[derive(Debug)]
 pub struct Ping {
@@ -33,7 +33,9 @@ impl Unknown {
 
     pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
         // ...
-        unimplemented!("Unknown command")
+        warn!("Not implemented!");
+
+        Ok(())
     }
 }
 

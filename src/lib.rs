@@ -15,3 +15,5 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub const DELIM: &[u8; 2] = b"\r\n";
+
+pub const PIPELINE_MAX_COMMANDS: usize = 500;

@@ -1,4 +1,6 @@
+use std::future::poll_fn;
 use std::io::{Cursor, self};
+use std::task::Poll;
 
 use bytes::{Buf, BytesMut};
 use tokio::net::TcpStream;
@@ -124,6 +126,17 @@ impl Connection {
         self.stream.write_all(DELIM).await?;
 
         Ok(())
+    }
+
+    pub async fn is_read_ready(&self) -> bool {
+        poll_fn(|cx| {
+            let res = self.stream.poll_read_ready(cx);
+
+            match res {
+                Poll::Ready(_) => Poll::Ready(true),
+                Poll::Pending => Poll::Ready(false)
+            }
+        }).await
     }
 
     pub fn get_buf(&mut self) -> String {
