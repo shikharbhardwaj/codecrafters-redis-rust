@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use redis_starter_rust::{Connection, Command};
 
 use tokio::net::{TcpListener, TcpStream};
@@ -35,6 +37,7 @@ async fn handle_conn(socket: TcpStream) -> redis_starter_rust::Result<()> {
         } else {
             return Err(format!("Could not parse frame, buffer contents: {}", conn.get_buf()).into())
         }
+        thread::sleep(Duration::from_millis(10));
 
         if !conn.is_read_ready().await {
             info!("Exiting handle_conn");
