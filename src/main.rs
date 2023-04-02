@@ -16,11 +16,14 @@ async fn main() {
         let (socket, _) = listener.accept().await.unwrap();
         info!("Accepted connection");
 
-        let res = handle_conn(socket).await;
-
-        if res.is_err() {
-            error!("Error reading frame! {:?} ", res.err());
-        }
+        tokio::spawn(
+            async move {
+                let res = handle_conn(socket).await;
+                if res.is_err() {
+                    error!("Error reading frame! {:?} ", res.err());
+                }
+            }
+        );
     }
 }
 
@@ -37,6 +40,10 @@ async fn handle_conn(socket: TcpStream) -> redis_starter_rust::Result<()> {
         } else {
             return Err(format!("Could not parse frame, buffer contents: {}", conn.get_buf()).into())
         }
+        
+        // TODO: Fix this hack, which allows responding to multiple commands on
+        // the same connection. Ideally, we should have a way to check if the
+        // client has some data to send without waiting.
         thread::sleep(Duration::from_millis(10));
 
         if !conn.is_read_ready().await {
