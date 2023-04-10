@@ -1,7 +1,4 @@
 use std::io::{Cursor, self};
-use std::sync::Arc;
-use std::task::{Context, Wake};
-use std::thread::{self, Thread};
 
 use bytes::{Buf, BytesMut};
 use tokio::net::TcpStream;
@@ -13,15 +10,6 @@ use crate::frame::{self, Frame};
 pub struct Connection {
     stream: TcpStream,
     buffer: BytesMut,
-}
-
-/// A waker that wakes up the current thread when called.
-struct ThreadWaker(Thread);
-
-impl Wake for ThreadWaker {
-    fn wake(self: Arc<Self>) {
-        self.0.unpark();
-    }
 }
 
 impl Connection {
@@ -153,19 +141,5 @@ impl Connection {
         self.stream.write_all(DELIM).await?;
 
         Ok(())
-    }
-
-    pub async fn is_read_ready(&self) -> bool {
-        let t = thread::current();
-        let waker = Arc::new(ThreadWaker(t)).into();
-        let mut cx = Context::from_waker(&waker);
-
-        let res = self.stream.poll_read_ready(& mut cx);
-
-        res.is_ready()
-    }
-
-    pub fn get_buf(&mut self) -> String {
-        String::from_utf8(self.buffer.to_vec()).unwrap()
     }
 }
