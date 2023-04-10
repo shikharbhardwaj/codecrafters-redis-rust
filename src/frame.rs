@@ -13,7 +13,7 @@ use crate::{debug, warn};
 pub enum Frame {
     Simple(String),
     Error(String),
-    Integer(u64),
+    Integer(i64),
     Bulk(Bytes),
     Null,
     Array(Vec<Frame>),
@@ -52,8 +52,10 @@ impl Frame {
 
     /// Parses the buffer into a Frame.
     pub fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, Error> {
+        debug!("Frame::parse(): Start");
         match get_u8(src)? {
             b'$' => { // RESP string.
+                debug!("Frame::parse(): Parsing RESP string");
                 let len: usize = get_decimal(src)?.try_into()?;
 
                 debug!("Parsing decimal string with length: {}", len);
@@ -74,6 +76,7 @@ impl Frame {
                 Ok(Frame::Bulk(buffer.into()))
             }
             b'*' => { // RESP array.
+                debug!("Frame::parse(): Parsing RESP array");
                 let len = get_decimal(src)?.try_into()?;
 
                 let mut result = Vec::with_capacity(len);
@@ -87,6 +90,7 @@ impl Frame {
                 Ok(Frame::Array(result))
             }
             _ => {
+                debug!("Frame::parse(): null case");
                 warn!("Woohoo!");
 
                 Ok(Frame::Null)
@@ -145,9 +149,12 @@ fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, Error> {
 
 /// Read a u8
 fn get_u8(src: &mut Cursor<&[u8]>) -> Result<u8, Error> {
+    debug!("get_u8(): Start");
     if !src.has_remaining() {
+        debug!("get_u8(): No data in buffer.");
         return Err(Error::Incomplete);
     }
+    debug!("get_u8(): buffer has remaining data");
 
     Ok(src.get_u8())
 }

@@ -30,6 +30,36 @@ impl Unknown {
     pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
         // ...
         warn!("Not implemented!");
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct CommandList {
+}
+
+impl CommandList {
+    pub fn new() -> CommandList {
+        CommandList {}
+    }
+
+    pub async fn apply(self, dst: &mut Connection) -> crate::Result<()> {
+        let commands = Frame::Array(vec![
+            Frame::Array(
+                vec![
+                    Frame::Integer(-1),
+                    Frame::Array(vec![
+                        Frame::Simple("stale".to_string()),
+                        Frame::Simple("fast".to_string()),
+                    ]),
+                    Frame::Integer(0),
+                    Frame::Integer(0),
+                    Frame::Integer(0),
+                ]
+            )
+        ]);
+
+        dst.write_frame(&commands).await?;
 
         Ok(())
     }
@@ -38,6 +68,7 @@ impl Unknown {
 #[derive(Debug)]
 pub enum Command {
     Ping(Ping),
+    CommandList(CommandList),
     Unknown(Unknown),
 }
 
@@ -55,6 +86,7 @@ impl Command {
 
         match command_name.as_str() {
             "ping" => Ok(Command::Ping(Ping::new())),
+            "command" => Ok(Command::CommandList(CommandList::new())),
             _ => Ok(Command::Unknown(Unknown::new()))
         }
     }
@@ -64,6 +96,7 @@ impl Command {
 
         match self {
             Ping(cmd) => cmd.apply(dst).await,
+            CommandList(cmd) => cmd.apply(dst).await,
             Unknown(cmd) => cmd.apply(dst).await,
         }
     }

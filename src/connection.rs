@@ -7,7 +7,7 @@ use bytes::{Buf, BytesMut};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::DELIM;
+use crate::{debug, info, DELIM};
 use crate::frame::{self, Frame};
 
 pub struct Connection {
@@ -37,8 +37,11 @@ impl Connection {
     /// Returns `None` if EOF is read.
     pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
         loop {
+            debug!("read_frame(): Start");
+
             // Try to see if we can parse a frame from the current buffer.
             if let Some(frame) = self.parse_frame()? {
+                debug!("read_frame(): Parsing OK");
                 return Ok(Some(frame));
             }
 
@@ -51,19 +54,24 @@ impl Connection {
                 // shutdown, there should be no data in the buffer, otherwise
                 // the peer closed the connection while sending a frame.
                 if self.buffer.is_empty() {
+                    debug!("read_frame(): Exit from empty");
                     return Ok(None);
                 } else {
                     return Err("Connection reset by peer".into());
                 }
             }
+            debug!("read_frame(): Continuing loop");
         }
     }
 
     /// Parse a frame to the connection.
     fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
+        debug!("parse_frame(): Start");
         use frame::Error::Incomplete;
 
         let mut buf = Cursor::new(&self.buffer[..]);
+
+        debug!("parse_frame(): match");
 
         match Frame::check(&mut buf) {
             Ok(_) => {
