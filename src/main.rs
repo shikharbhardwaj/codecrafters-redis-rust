@@ -1,4 +1,4 @@
-use redis_starter_rust::{Connection, Command};
+use redis_starter_rust::{Connection, Command, Frame};
 
 use tokio::net::{TcpListener, TcpStream};
 
@@ -31,21 +31,12 @@ async fn handle_conn(socket: TcpStream) -> redis_starter_rust::Result<()> {
     let mut conn = Connection::new(socket);
 
     while let Some(frame) = conn.read_frame().await? {
-        info!("Got frame: {:?}", frame);
-        let cmd = Command::from_frame(frame)?;
-        cmd.apply(& mut conn).await?;
+        debug!("Got frame: {:?}", frame);
 
-        info!("Finished handling frame");
-        
-        // TODO: Fix this hack, which allows responding to multiple commands on
-        // the same connection. Ideally, we should have a way to check if the
-        // client has some data to send without waiting.
-        // thread::sleep(Duration::from_millis(10));
-
-        // if !conn.is_read_ready().await {
-        //     info!("Exiting handle_conn");
-        //     break
-        // }
+        match Command::from_frame(frame) {
+            Ok(cmd) => cmd.apply(& mut conn).await?,
+            Err(err) => conn.write_frame(&Frame::Error(err.to_string())).await?
+        }
     }
 
     Ok(())

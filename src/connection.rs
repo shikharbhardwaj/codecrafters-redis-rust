@@ -129,6 +129,12 @@ impl Connection {
                 self.stream.write_all(val.as_bytes()).await?;
                 self.stream.write_all(DELIM).await?;
             },
+            Frame::Error(val) => {
+                self.stream.write_u8(b'-').await?;
+
+                self.stream.write_all(val.as_bytes()).await?;
+                self.stream.write_all(DELIM).await?;
+            },
             _ => {}
         }
 
