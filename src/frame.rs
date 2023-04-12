@@ -14,7 +14,7 @@ pub enum Frame {
     Simple(String),
     Error(String),
     Integer(i64),
-    Bulk(Bytes),
+    Bulk(Option<Bytes>),
     Null,
     Array(Vec<Frame>),
 }
@@ -73,7 +73,7 @@ impl Frame {
                 // Skip the delimiter.
                 skip(src, 2)?;
 
-                Ok(Frame::Bulk(buffer.into()))
+                Ok(Frame::Bulk(Some(buffer.into())))
             }
             b'*' => { // RESP array.
                 debug!("Frame::parse(): Parsing RESP array");

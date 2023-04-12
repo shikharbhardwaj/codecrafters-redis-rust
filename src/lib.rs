@@ -9,6 +9,9 @@ pub use frame::Frame;
 mod commands;
 pub use commands::Command;
 
+mod db;
+pub use db::SharedDb;
+
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// This is defined as a convenience.

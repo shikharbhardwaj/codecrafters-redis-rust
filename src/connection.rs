@@ -4,7 +4,7 @@ use bytes::{Buf, BytesMut};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{debug, info, DELIM};
+use crate::{debug, DELIM};
 use crate::frame::{self, Frame};
 
 pub struct Connection {
@@ -103,13 +103,20 @@ impl Connection {
     async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
             Frame::Bulk(bytes) => {
-                let len = bytes.len();
+                if let Some(content) = bytes {
+                    let len = content.len();
 
-                self.stream.write_u8(b'$').await?;
-                self.write_decimal(len as u64).await?;
+                    self.stream.write_u8(b'$').await?;
+                    self.write_decimal(len as u64).await?;
 
-                self.stream.write_all(bytes).await?;
-                self.stream.write_all(DELIM).await?;
+                    self.stream.write_all(content).await?;
+                    self.stream.write_all(DELIM).await?;
+                } else {
+                    self.stream.write_u8(b'$').await?;
+                    self.stream.write_u8(b'-').await?;
+                    self.stream.write_u8(b'1').await?;
+                    self.stream.write_all(DELIM).await?;
+                }
             },
             Frame::Simple(val) => {
                 self.stream.write_u8(b'+').await?;
