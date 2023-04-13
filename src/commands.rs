@@ -211,7 +211,7 @@ impl Command {
                         frame => return Err(format!("ERR: Wrong expiry command frame, got {:?}", frame).into()),
                     };
 
-                    let multiplier = match command.as_str() {
+                    let multiplier = match command.to_uppercase().as_str() {
                         "EX" => 1000,
                         "PX" => 1,
                         cmd => return Err(format!("ERR: Wrong expiry command, got {:?}", cmd).into()),
