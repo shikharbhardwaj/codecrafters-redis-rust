@@ -1,6 +1,8 @@
 mod log;
 
 mod connection;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 pub use connection::Connection;
 
 pub mod frame;
@@ -20,3 +22,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub const DELIM: &[u8; 2] = b"\r\n";
 
 pub const PIPELINE_MAX_COMMANDS: usize = 500;
+
+pub fn get_unix_ts_millis() -> u128 {
+    let start = SystemTime::now();
+
+    start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards").as_millis()
+}

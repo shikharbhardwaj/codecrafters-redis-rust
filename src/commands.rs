@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{warn, Connection, Frame, SharedDb};
+use crate::{warn, Connection, Frame, SharedDb, get_unix_ts_millis};
 
 #[derive(Debug)]
 pub struct Ping {}
@@ -68,19 +68,28 @@ impl Echo {
 #[derive(Debug)]
 pub struct Set {
     key: String,
-    val: Bytes
+    val: Bytes,
+    expiry_duration_millis: Option<u128>,
 }
 
 impl Set {
-    pub fn new(key: String, val: Bytes) -> Set {
+    pub fn new(key: String, val: Bytes, expiry_duration_millis: Option<u128>) -> Set {
         Set {
-            key, val
+            key, val, expiry_duration_millis
         }
     }
 
     pub async fn apply(self, dst: &mut Connection, db: SharedDb) -> crate::Result<()> {
         let mut db = db.lock().await;
-        db.insert(self.key.clone(), self.val.clone());
+
+        if let Some(duration) = self.expiry_duration_millis {
+            let ts = get_unix_ts_millis() + duration;
+
+            db.insert(self.key.clone(), (self.val.clone(), Some(ts)));
+        } else {
+            db.insert(self.key.clone(), (self.val.clone(), None));
+        }
+
 
         dst.write_frame(&Frame::Simple("OK".to_string())).await?;
 
@@ -102,10 +111,27 @@ impl Get {
     }
 
     pub async fn apply(self, dst: &mut Connection, db: SharedDb) -> crate::Result<()> {
-        let db = db.lock().await;
-        let val = db.get(&self.key);
+        let mut db = db.lock().await;
 
-        dst.write_frame(&Frame::Bulk(val.cloned())).await?;
+        let mut valid = false;
+
+        if let Some((val , epxiry)) = db.get(&self.key) {
+            valid = true;
+
+            if let Some(ts) = epxiry {
+                valid = ts > &get_unix_ts_millis();
+            }
+
+            if valid {
+                dst.write_frame(&Frame::Bulk(Some(val.clone()))).await?;
+            } else {
+                db.remove(&self.key);
+            }
+        } 
+
+        if !valid {
+            dst.write_frame(&Frame::Bulk(None)).await?;
+        }
 
         Ok(())
     }
@@ -162,7 +188,7 @@ impl Command {
                 Ok(Command::Get(Get::new(String::from_utf8(arg.to_vec())? )))
             },
             "set" => {
-                if array.len() != 3 {
+                if array.len() != 3 && array.len() != 5 {
                     return Err(format!("ERR: Wrong number of arguments for SET").into())
                 }
 
@@ -176,7 +202,31 @@ impl Command {
                     frame => return Err(format!("ERR: Wrong argument for ECHO, got {:?}", frame).into()),
                 };
 
-                Ok(Command::Set(Set::new(String::from_utf8(key.to_vec())?, val.clone())))
+                let mut expiry_duration_millis= None;
+
+                if array.len() == 5 {
+                    let command = match &array[3] {
+                        Frame::Bulk(Some(bytes)) => String::from_utf8(bytes.to_vec())?,
+                        Frame::Simple(val) => val.to_string(),
+                        frame => return Err(format!("ERR: Wrong expiry command frame, got {:?}", frame).into()),
+                    };
+
+                    let multiplier = match command.as_str() {
+                        "EX" => 1000,
+                        "PX" => 1,
+                        cmd => return Err(format!("ERR: Wrong expiry command, got {:?}", cmd).into()),
+                    };
+
+                    let duration = match &array[4] {
+                        Frame::Bulk(Some(bytes)) => String::from_utf8(bytes.to_vec())?,
+                        Frame::Simple(val) => val.to_string(),
+                        frame => return Err(format!("ERR: Wrong expiry duration frame, got {:?}", frame).into()),
+                    };
+
+                    expiry_duration_millis = Some(duration.parse::<u128>().unwrap() * multiplier);
+                }
+
+                Ok(Command::Set(Set::new(String::from_utf8(key.to_vec())?, val.clone(), expiry_duration_millis)))
             },
             _ => Ok(Command::Unknown(Unknown::new())),
         }

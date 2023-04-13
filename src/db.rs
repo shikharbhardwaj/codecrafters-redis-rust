@@ -4,4 +4,4 @@ use tokio::sync::Mutex;
 
 use bytes::Bytes;
 
-pub type SharedDb = Arc<Mutex<HashMap<String, Bytes>>>;
+pub type SharedDb = Arc<Mutex<HashMap<String, (Bytes, Option<u128>)>>>;
