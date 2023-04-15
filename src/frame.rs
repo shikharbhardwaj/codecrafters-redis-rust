@@ -46,7 +46,11 @@ impl Frame {
 
                 Ok(())
             }
-            actual => Err(format!("protocol error; invalid frame type byte `{}`", actual).into()),
+            _inline => { // Inline space-separated command.
+                get_line(src)?;
+
+                Ok(())
+            },
         }
     }
 
@@ -89,11 +93,21 @@ impl Frame {
 
                 Ok(Frame::Array(result))
             }
-            _ => {
-                debug!("Frame::parse(): null case");
-                warn!("Woohoo!");
+            inline => {
+                debug!("Frame::parse(): Parsing inline command");
 
-                Ok(Frame::Null)
+                let line = get_line(src)?.to_vec();
+
+                let line_str = format!("{}{}", String::from_utf8(vec![inline])?, String::from_utf8(line)?);
+                let parts: Vec<&str> = line_str.split(' ').collect();
+
+                let mut res = vec![];
+
+                for part in parts {
+                    res.push(Frame::Bulk(Some(Bytes::copy_from_slice(part.as_bytes()))));
+                }
+
+                Ok(Frame::Array(res))
             },
         }
     }
