@@ -150,7 +150,9 @@ impl Info {
                     let db = db.lock().await;
                     dst.write_frame(&Frame::Bulk(Some(db.get_replication_info().get_info_bytes()))).await?;
                 }
-                _ => {} // Handle all other possible values of section
+                _ => {
+                    dst.write_frame(&Frame::Error("ERR: Invalid section".to_string())).await?;
+                } // Handle all other possible values of section
             }
         } else {
         }
