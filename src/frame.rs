@@ -7,7 +7,7 @@ use std::string::FromUtf8Error;
 use std::convert::TryInto;
 use std::num::TryFromIntError;
 
-use crate::{debug, warn};
+use crate::debug;
 
 #[derive(Debug)]
 pub enum Frame {

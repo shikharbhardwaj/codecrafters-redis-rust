@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection, get_unix_ts_millis, warn, Connection, Frame, SharedState};
+use crate::{get_unix_ts_millis, warn, Connection, Frame, SharedRedisState};
 
 #[derive(Debug)]
 pub struct Ping {}
@@ -10,7 +10,7 @@ impl Ping {
         Ping {}
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
         dst.write_frame(&Frame::Simple("PONG".to_string())).await?;
         Ok(())
     }
@@ -24,7 +24,7 @@ impl Unknown {
         Unknown {}
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, _dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
         // ...
         warn!("Not implemented!");
         Err("Command not supported".into())
@@ -39,7 +39,7 @@ impl CommandList {
         CommandList {}
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
         dst.write_frame(&Frame::Array(vec![])).await?;
 
         Ok(())
@@ -56,7 +56,7 @@ impl Echo {
         Echo { arg }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
         dst.write_frame(&Frame::Bulk(Some(self.arg))).await?;
 
         Ok(())
@@ -79,7 +79,7 @@ impl Set {
         }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
         let mut db = db.lock().await;
 
         if let Some(duration) = self.expiry_duration_millis {
@@ -106,7 +106,7 @@ impl Get {
         Get { key }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
         let mut db = db.lock().await;
 
         let mut valid = false;
@@ -143,7 +143,7 @@ impl Info {
         Info { section }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
         if let Some(section) = self.section {
             match section.as_str() {
                 "replication" => {
@@ -294,7 +294,7 @@ impl Command {
         }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedState) -> crate::Result<()> {
+    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
         use Command::*;
 
         match self {

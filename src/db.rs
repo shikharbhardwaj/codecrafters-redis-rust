@@ -6,7 +6,7 @@ use bytes::Bytes;
 
 use crate::ReplicationInfo;
 
-pub type SharedState = Arc<Mutex<RedisState>>;
+pub type SharedRedisState = Arc<Mutex<RedisState>>;
 
 
 pub struct RedisState {

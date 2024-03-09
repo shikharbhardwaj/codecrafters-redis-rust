@@ -12,7 +12,7 @@ mod commands;
 pub use commands::Command;
 
 mod db;
-pub use db::SharedState;
+pub use db::SharedRedisState;
 pub use db::RedisState;
 
 mod replication;
