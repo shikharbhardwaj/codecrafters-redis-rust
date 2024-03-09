@@ -1,8 +1,6 @@
 use bytes::Bytes;
 use tokio::net::TcpStream;
 
-use anyhow::Result;
-
 use crate::{info, Connection, Frame};
 
 #[derive(Clone)]
@@ -102,9 +100,7 @@ impl ReplicationWorker {
 
         if let Some(pong) = conn.read_frame().await? {
             if let Frame::Simple(pong) = pong {
-                if pong != "PONG" {
-                    return Err("Invalid PONG response".into());
-                }
+                info!("Received response: {}", pong);
             } else {
                 return Err("Did not get PONG response from master".into());
             }
@@ -119,7 +115,7 @@ impl ReplicationWorker {
         if let Some(ok) = conn.read_frame().await? {
             if let Frame::Simple(ok) = ok {
                 if ok != "OK" {
-                    return Err("Invalid OK response".into());
+                    info!("Received response: {}", ok);
                 }
             } else {
                 return Err("Did not get OK response from master".into());
@@ -135,7 +131,7 @@ impl ReplicationWorker {
         if let Some(ok) = conn.read_frame().await? {
             if let Frame::Simple(ok) = ok {
                 if ok != "OK" {
-                    return Err("Invalid OK response".into());
+                    info!("Received response: {}", ok);
                 }
             } else {
                 return Err("Did not get OK response from master".into());
