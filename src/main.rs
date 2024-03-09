@@ -51,7 +51,7 @@ async fn main() {
     info!("Listening on port: {}", args.port);
 
     let shared_db = Arc::new(
-        Mutex::new(RedisState::new(args.replicaof.clone())));
+        Mutex::new(RedisState::new(args.replicaof.clone(), args.port)));
 
     if args.replicaof.is_some() {
         let replicaof = args.replicaof.as_ref().unwrap();

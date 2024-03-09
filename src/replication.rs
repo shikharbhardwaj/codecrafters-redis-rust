@@ -17,10 +17,11 @@ pub struct ReplicationInfo {
     repl_backlog_first_byte_offset: u64,
     repl_backlog_histlen: u64,
     reaplicaof_addr: Option<String>,
+    listening_port: String,
 }
 
 impl ReplicationInfo {
-    pub fn new(replicaof: Option<String>) -> Self {
+    pub fn new(replicaof: Option<String>, listening_port: String) -> Self {
         let role = match replicaof {
             Some(_) => "slave".to_string(),
             None => "master".to_string(),
@@ -40,6 +41,7 @@ impl ReplicationInfo {
             repl_backlog_first_byte_offset: 0,
             repl_backlog_histlen: 0,
             reaplicaof_addr: replicaof,
+            listening_port: listening_port,
         }
     }
     
@@ -59,7 +61,7 @@ impl ReplicationInfo {
     }
 }
 
-// ReplicationWorker is responsible for managing the replication state of the server.
+// ReplicationWorker is responsible for managing the replication behaviour of the server.
 pub struct ReplicationWorker {
     replication_info: ReplicationInfo,
     connection: Option<Connection>,
@@ -75,10 +77,7 @@ impl ReplicationWorker {
         info!("Starting replication worker");
         self.connection = Some(self.connect().await?);
 
-        // Send the first ping.
-        self.connection
-            .as_mut().unwrap()
-            .write_frame(&Frame::Array(vec![Frame::Bulk(Some(Bytes::from("PING")))])).await?;
+        self.handshake().await?;
 
         loop {
             let frame = self.connection.as_mut().unwrap().read_frame().await?;
@@ -91,5 +90,24 @@ impl ReplicationWorker {
     async fn connect(&mut self) -> Result<Connection, anyhow::Error> {
         let stream = TcpStream::connect(self.replication_info.reaplicaof_addr.as_ref().unwrap()).await?;
         return Ok(Connection::new(stream));
+    }
+
+    async fn handshake(&mut self) -> Result<(), anyhow::Error> {
+        let conn = self.connection.as_mut().unwrap();
+
+        // Send the first ping.
+        conn.write_frame(&Frame::Array(vec![
+            Frame::Bulk(Some(Bytes::from("PING"))),
+        ])).await?;
+
+        conn.write_frame(&Frame::Array(vec![
+            Frame::Bulk(Some(Bytes::from(format!("REPLCONF listening-port {}", self.replication_info.listening_port)))),
+        ])).await?;
+
+        conn.write_frame(&Frame::Array(vec![
+            Frame::Bulk(Some(Bytes::from("REPLCONF capa psync2"))),
+        ])).await?;
+
+        Ok(())
     }
 }

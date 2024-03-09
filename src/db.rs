@@ -14,10 +14,10 @@ pub struct RedisState {
 }
 
 impl RedisState {
-    pub fn new(replicaof: Option<String>) -> Self {
+    pub fn new(replicaof: Option<String>, listening_port: String) -> Self {
         Self {
             db: HashMap::new(),
-            replication_info: ReplicationInfo::new(replicaof),
+            replication_info: ReplicationInfo::new(replicaof, listening_port),
         }
     }
 
