@@ -87,12 +87,12 @@ impl ReplicationWorker {
         // Ok(())
     }
 
-    async fn connect(&mut self) -> Result<Connection, anyhow::Error> {
+    async fn connect(&mut self) -> crate::Result<Connection> {
         let stream = TcpStream::connect(self.replication_info.reaplicaof_addr.as_ref().unwrap()).await?;
         return Ok(Connection::new(stream));
     }
 
-    async fn handshake(&mut self) -> Result<(), anyhow::Error> {
+    async fn handshake(&mut self) -> crate::Result<()> {
         let conn = self.connection.as_mut().unwrap();
 
         // Send the first ping.
@@ -100,16 +100,52 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("PING"))),
         ])).await?;
 
+        if let Some(pong) = conn.read_frame().await? {
+            if let Frame::Simple(pong) = pong {
+                if pong != "PONG" {
+                    return Err("Invalid PONG response".into());
+                }
+            } else {
+                return Err("Did not get PONG response from master".into());
+            }
+        }
+
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
             Frame::Bulk(Some(Bytes::from("listening-port"))),
             Frame::Bulk(Some(Bytes::from(self.replication_info.listening_port.clone()))),
         ])).await?;
 
+        if let Some(ok) = conn.read_frame().await? {
+            if let Frame::Simple(ok) = ok {
+                if ok != "OK" {
+                    return Err("Invalid OK response".into());
+                }
+            } else {
+                return Err("Did not get OK response from master".into());
+            }
+        }
+
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
             Frame::Bulk(Some(Bytes::from("capa"))),
             Frame::Bulk(Some(Bytes::from("psync2"))),
+        ])).await?;
+
+        if let Some(ok) = conn.read_frame().await? {
+            if let Frame::Simple(ok) = ok {
+                if ok != "OK" {
+                    return Err("Invalid OK response".into());
+                }
+            } else {
+                return Err("Did not get OK response from master".into());
+            }
+        }
+
+        conn.write_frame(&Frame::Array(vec![
+            Frame::Bulk(Some(Bytes::from("PSYNC"))),
+            Frame::Bulk(Some(Bytes::from("?"))),
+            Frame::Bulk(Some(Bytes::from("-1"))),
         ])).await?;
 
         Ok(())
