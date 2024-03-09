@@ -12,7 +12,8 @@ mod commands;
 pub use commands::Command;
 
 mod db;
-pub use db::SharedDb;
+pub use db::SharedState;
+pub use db::RedisState;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 

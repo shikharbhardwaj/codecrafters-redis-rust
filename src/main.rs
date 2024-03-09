@@ -1,7 +1,7 @@
 use std::env;
 use std::{sync::Arc, collections::HashMap};
 
-use redis_starter_rust::{Connection, Command, Frame, SharedDb};
+use redis_starter_rust::{Command, Connection, Frame, RedisState, SharedState};
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -39,7 +39,7 @@ async fn main() {
 
     info!("Listening on port: {}", args.port);
 
-    let shared_db = Arc::new(Mutex::new(HashMap::new()));
+    let shared_db = Arc::new(Mutex::new(RedisState::new()));
 
     loop {
         let (socket, _) = listener.accept().await.unwrap();
@@ -60,7 +60,7 @@ async fn main() {
 
 
 
-async fn handle_conn(socket: TcpStream, db: SharedDb) -> redis_starter_rust::Result<()> {
+async fn handle_conn(socket: TcpStream, db: SharedState) -> redis_starter_rust::Result<()> {
     let mut conn = Connection::new(socket);
     
     while let Some(frame) = conn.read_frame().await? {
