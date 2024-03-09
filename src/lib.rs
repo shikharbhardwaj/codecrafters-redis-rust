@@ -15,6 +15,9 @@ mod db;
 pub use db::SharedState;
 pub use db::RedisState;
 
+mod replication;
+pub use replication::ReplicationInfo;
+
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
 /// This is defined as a convenience.
