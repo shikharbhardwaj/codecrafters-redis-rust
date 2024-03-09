@@ -20,11 +20,14 @@ impl ReplicationInfo {
             None => "master".to_string(),
         };
 
+        // TODO: Generate random 40 character alphanumeric string for the replication id.
+        let replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+
         Self {
             role,
             connected_slaves: 0,
             master_repl_offset: 0,
-            master_replication_id: "some-replication-id".to_string(),
+            master_replication_id: replication_id.to_string(),
             second_repl_offset: 0,
             repl_backlog_active: false,
             repl_backlog_size: 0,
