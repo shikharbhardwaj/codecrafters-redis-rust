@@ -101,11 +101,15 @@ impl ReplicationWorker {
         ])).await?;
 
         conn.write_frame(&Frame::Array(vec![
-            Frame::Bulk(Some(Bytes::from(format!("REPLCONF listening-port {}", self.replication_info.listening_port)))),
+            Frame::Bulk(Some(Bytes::from("REPLCONF"))),
+            Frame::Bulk(Some(Bytes::from("listening-port"))),
+            Frame::Bulk(Some(Bytes::from(self.replication_info.listening_port.clone()))),
         ])).await?;
 
         conn.write_frame(&Frame::Array(vec![
-            Frame::Bulk(Some(Bytes::from("REPLCONF capa psync2"))),
+            Frame::Bulk(Some(Bytes::from("REPLCONF"))),
+            Frame::Bulk(Some(Bytes::from("capa"))),
+            Frame::Bulk(Some(Bytes::from("psync2"))),
         ])).await?;
 
         Ok(())
