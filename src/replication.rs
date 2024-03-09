@@ -1,4 +1,9 @@
 use bytes::Bytes;
+use tokio::net::TcpStream;
+
+use anyhow::Result;
+
+use crate::{info, Connection, Frame};
 
 #[derive(Clone)]
 pub struct ReplicationInfo {
@@ -11,10 +16,11 @@ pub struct ReplicationInfo {
     repl_backlog_size: u64,
     repl_backlog_first_byte_offset: u64,
     repl_backlog_histlen: u64,
+    reaplicaof_addr: Option<String>,
 }
 
 impl ReplicationInfo {
-    pub fn new(replicaof: Option<&String>) -> Self {
+    pub fn new(replicaof: Option<String>) -> Self {
         let role = match replicaof {
             Some(_) => "slave".to_string(),
             None => "master".to_string(),
@@ -33,6 +39,7 @@ impl ReplicationInfo {
             repl_backlog_size: 0,
             repl_backlog_first_byte_offset: 0,
             repl_backlog_histlen: 0,
+            reaplicaof_addr: replicaof,
         }
     }
     
@@ -49,5 +56,40 @@ impl ReplicationInfo {
             self.repl_backlog_first_byte_offset,
             self.repl_backlog_histlen
         ))
+    }
+}
+
+// ReplicationWorker is responsible for managing the replication state of the server.
+pub struct ReplicationWorker {
+    replication_info: ReplicationInfo,
+    connection: Option<Connection>,
+}
+
+impl ReplicationWorker {
+    pub fn new(replication_info: ReplicationInfo) -> Self {
+        Self { replication_info, connection: None }
+    }
+
+    // Start the replication worker as a background tokio task.
+    pub async fn start(&mut self) -> crate::Result<()> {
+        info!("Starting replication worker");
+        self.connection = Some(self.connect().await?);
+
+        // Send the first ping.
+        self.connection
+            .as_mut().unwrap()
+            .write_frame(&Frame::Array(vec![Frame::Bulk(Some(Bytes::from("PING")))])).await?;
+
+        loop {
+            let frame = self.connection.as_mut().unwrap().read_frame().await?;
+            info!("Received frame: {:?}", frame);
+        }
+
+        // Ok(())
+    }
+
+    async fn connect(&mut self) -> Result<Connection, anyhow::Error> {
+        let stream = TcpStream::connect(self.replication_info.reaplicaof_addr.as_ref().unwrap()).await?;
+        return Ok(Connection::new(stream));
     }
 }

@@ -1,7 +1,7 @@
 use std::env;
 use std::sync::Arc;
 
-use redis_starter_rust::{Command, Connection, Frame, RedisState, SharedRedisState};
+use redis_starter_rust::{Command, Connection, Frame, RedisState, ReplicationWorker, SharedRedisState};
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -50,12 +50,21 @@ async fn main() {
 
     info!("Listening on port: {}", args.port);
 
+    let shared_db = Arc::new(
+        Mutex::new(RedisState::new(args.replicaof.clone())));
+
     if args.replicaof.is_some() {
         let replicaof = args.replicaof.as_ref().unwrap();
         info!("Replicating to: {}", replicaof);
+
+        let replication_info = shared_db.lock().await.get_replication_info().clone();
+        let mut replication_worker = ReplicationWorker::new(replication_info);
+
+        tokio::spawn(async move {
+            let _ = replication_worker.start().await;
+        });
     }
 
-    let shared_db = Arc::new(Mutex::new(RedisState::new(args.replicaof.as_ref())));
 
     loop {
         let (socket, _) = listener.accept().await.unwrap();

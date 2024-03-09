@@ -14,7 +14,7 @@ pub struct RedisState {
 }
 
 impl RedisState {
-    pub fn new(replicaof: Option<&String>) -> Self {
+    pub fn new(replicaof: Option<String>) -> Self {
         Self {
             db: HashMap::new(),
             replication_info: ReplicationInfo::new(replicaof),

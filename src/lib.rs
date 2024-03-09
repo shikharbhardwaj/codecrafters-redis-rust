@@ -16,7 +16,7 @@ pub use db::SharedRedisState;
 pub use db::RedisState;
 
 mod replication;
-pub use replication::ReplicationInfo;
+pub use replication::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
