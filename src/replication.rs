@@ -98,13 +98,13 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("PING"))),
         ])).await?;
 
-        if let Some(pong) = conn.read_frame().await? {
-            if let Frame::Simple(pong) = pong {
-                info!("Received response: {}", pong);
-            } else {
-                return Err("Did not get PONG response from master".into());
-            }
-        }
+        // if let Some(pong) = conn.read_frame().await? {
+        //     if let Frame::Simple(pong) = pong {
+        //         info!("Received response: {}", pong);
+        //     } else {
+        //         return Err("Did not get PONG response from master".into());
+        //     }
+        // }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
@@ -112,15 +112,15 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from(self.replication_info.listening_port.clone()))),
         ])).await?;
 
-        if let Some(ok) = conn.read_frame().await? {
-            if let Frame::Simple(ok) = ok {
-                if ok != "OK" {
-                    info!("Received response: {}", ok);
-                }
-            } else {
-                return Err("Did not get OK response from master".into());
-            }
-        }
+        // if let Some(ok) = conn.read_frame().await? {
+        //     if let Frame::Simple(ok) = ok {
+        //         if ok != "OK" {
+        //             info!("Received response: {}", ok);
+        //         }
+        //     } else {
+        //         return Err("Did not get OK response from master".into());
+        //     }
+        // }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
@@ -128,15 +128,15 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("psync2"))),
         ])).await?;
 
-        if let Some(ok) = conn.read_frame().await? {
-            if let Frame::Simple(ok) = ok {
-                if ok != "OK" {
-                    info!("Received response: {}", ok);
-                }
-            } else {
-                return Err("Did not get OK response from master".into());
-            }
-        }
+        // if let Some(ok) = conn.read_frame().await? {
+        //     if let Frame::Simple(ok) = ok {
+        //         if ok != "OK" {
+        //             info!("Received response: {}", ok);
+        //         }
+        //     } else {
+        //         return Err("Did not get OK response from master".into());
+        //     }
+        // }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("PSYNC"))),
