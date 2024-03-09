@@ -8,17 +8,16 @@ use crate::ReplicationInfo;
 
 pub type SharedRedisState = Arc<Mutex<RedisState>>;
 
-
 pub struct RedisState {
     db: HashMap<String, (Bytes, Option<u128>)>,
     replication_info: ReplicationInfo,
 }
 
 impl RedisState {
-    pub fn new() -> Self {
+    pub fn new(replicaof: Option<&String>) -> Self {
         Self {
             db: HashMap::new(),
-            replication_info: ReplicationInfo::new(),
+            replication_info: ReplicationInfo::new(replicaof),
         }
     }
 

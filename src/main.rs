@@ -10,6 +10,7 @@ mod log;
 
 struct RedisArgs {
     port: String,
+    replicaof: Option<String>,
 }
 
 impl RedisArgs {
@@ -22,8 +23,18 @@ impl RedisArgs {
             None => "6379".to_owned()
         };
 
+        let replicaof_host = args.iter().position(|r| r == "--replicaof").and_then(|idx| args.get(idx + 1).cloned());
+        let replicaof_port = args.iter().position(|r| r == "--replicaof").and_then(|idx| args.get(idx + 2).cloned());
+
+
+        let replicaof = match (replicaof_host, replicaof_port) {
+            (Some(host), Some(port)) => Some(format!("{}:{}", host, port)),
+            _ => None
+        };
+
         Self{
             port,
+            replicaof,
         }
     }
 }
@@ -39,7 +50,12 @@ async fn main() {
 
     info!("Listening on port: {}", args.port);
 
-    let shared_db = Arc::new(Mutex::new(RedisState::new()));
+    if args.replicaof.is_some() {
+        let replicaof = args.replicaof.as_ref().unwrap();
+        info!("Replicating to: {}", replicaof);
+    }
+
+    let shared_db = Arc::new(Mutex::new(RedisState::new(args.replicaof.as_ref())));
 
     loop {
         let (socket, _) = listener.accept().await.unwrap();

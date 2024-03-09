@@ -1,6 +1,5 @@
 use bytes::Bytes;
 
-
 #[derive(Clone)]
 pub struct ReplicationInfo {
     role: String,
@@ -15,9 +14,14 @@ pub struct ReplicationInfo {
 }
 
 impl ReplicationInfo {
-    pub fn new() -> Self {
+    pub fn new(replicaof: Option<&String>) -> Self {
+        let role = match replicaof {
+            Some(_) => "slave".to_string(),
+            None => "master".to_string(),
+        };
+
         Self {
-            role: "master".to_string(),
+            role,
             connected_slaves: 0,
             master_repl_offset: 0,
             master_replication_id: "some-replication-id".to_string(),
