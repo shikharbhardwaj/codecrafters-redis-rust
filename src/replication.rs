@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use tokio::net::TcpStream;
 
-use crate::{info, Connection, Frame};
+use crate::{debug, info, Connection, Frame};
 
 #[derive(Clone)]
 pub struct ReplicationInfo {
@@ -77,12 +77,13 @@ impl ReplicationWorker {
 
         self.handshake().await?;
 
-        loop {
-            let frame = self.connection.as_mut().unwrap().read_frame().await?;
-            info!("Received frame: {:?}", frame);
+        let conn = self.connection.as_mut().unwrap();
+
+        while let Some(frame) = conn.read_frame().await? {
+            debug!("Got frame: {:?}", frame);
         }
 
-        // Ok(())
+        Ok(())
     }
 
     async fn connect(&mut self) -> crate::Result<Connection> {
@@ -98,13 +99,14 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("PING"))),
         ])).await?;
 
-        // if let Some(pong) = conn.read_frame().await? {
-        //     if let Frame::Simple(pong) = pong {
-        //         info!("Received response: {}", pong);
-        //     } else {
-        //         return Err("Did not get PONG response from master".into());
-        //     }
-        // }
+        if let Some(pong) = conn.read_frame().await? {
+            if let Frame::Simple(pong) = pong {
+                assert!(pong.to_lowercase() == "pong");
+                info!("Received response: {}", pong);
+            } else {
+                return Err("Did not get PONG response from master".into());
+            }
+        }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
@@ -112,15 +114,14 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from(self.replication_info.listening_port.clone()))),
         ])).await?;
 
-        // if let Some(ok) = conn.read_frame().await? {
-        //     if let Frame::Simple(ok) = ok {
-        //         if ok != "OK" {
-        //             info!("Received response: {}", ok);
-        //         }
-        //     } else {
-        //         return Err("Did not get OK response from master".into());
-        //     }
-        // }
+        if let Some(ok) = conn.read_frame().await? {
+            if let Frame::Simple(ok) = ok {
+                assert!(ok.to_lowercase() == "ok");
+                info!("Received response: {}", ok);
+            } else {
+                return Err("Did not get OK response from master".into());
+            }
+        }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("REPLCONF"))),
@@ -128,15 +129,14 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("psync2"))),
         ])).await?;
 
-        // if let Some(ok) = conn.read_frame().await? {
-        //     if let Frame::Simple(ok) = ok {
-        //         if ok != "OK" {
-        //             info!("Received response: {}", ok);
-        //         }
-        //     } else {
-        //         return Err("Did not get OK response from master".into());
-        //     }
-        // }
+        if let Some(ok) = conn.read_frame().await? {
+            if let Frame::Simple(ok) = ok {
+                assert!(ok.to_lowercase() == "ok");
+                info!("Received response: {}", ok);
+            } else {
+                return Err("Did not get OK response from master".into());
+            }
+        }
 
         conn.write_frame(&Frame::Array(vec![
             Frame::Bulk(Some(Bytes::from("PSYNC"))),

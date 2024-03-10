@@ -93,6 +93,11 @@ impl Frame {
 
                 Ok(Frame::Array(result))
             }
+            b'+' => { // RESP simple string.
+                debug!("Frame::parse(): Parsing RESP simple string");
+                let line = get_line(src)?;
+                Ok(Frame::Simple(String::from_utf8(line.to_vec())?))
+            }
             inline => {
                 debug!("Frame::parse(): Parsing inline command");
 

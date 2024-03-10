@@ -162,6 +162,31 @@ impl Info {
 }
 
 #[derive(Debug)]
+pub enum ReplConfOption {
+    ListeningPort(String),
+    Capabilities(Vec<String>),
+}
+
+#[derive(Debug)]
+pub struct ReplConf {
+    pub option: ReplConfOption,
+}
+
+
+impl ReplConf {
+    pub fn new(option: ReplConfOption) -> ReplConf {
+        ReplConf { option }
+    }
+
+    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
+        dst.write_frame(&Frame::Simple("OK".to_string())).await?;
+
+        Ok(())
+    }
+}
+
+
+#[derive(Debug)]
 pub enum Command {
     Ping(Ping),
     CommandList(CommandList),
@@ -170,6 +195,7 @@ pub enum Command {
     Set(Set),
     Get(Get),
     Info(Info),
+    ReplConf(ReplConf),
 }
 
 impl Command {
@@ -290,6 +316,39 @@ impl Command {
 
                 Ok(Command::Info(Info::new(Some(String::from_utf8(arg.to_vec())?))))
             },
+            "replconf" => {
+                if array.len() < 3 {
+                    return Err(format!("ERR: Wrong number of arguments for REPLCONF").into());
+                }
+
+                let arg = match array.get(1).unwrap() {
+                    Frame::Bulk(Some(bytes)) => String::from_utf8(bytes.to_vec())?,
+                    frame => return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
+                };
+
+                if arg == "listening-port" {
+                    let arg = match &array[2] {
+                        Frame::Bulk(Some(bytes)) => bytes,
+                        frame => return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
+                    };
+                    let listening_port = String::from_utf8(arg.to_vec())?;
+                    Ok(Command::ReplConf(ReplConf::new(ReplConfOption::ListeningPort(listening_port))))
+                } else if arg == "capa" {
+                    let mut capabilities = Vec::new();
+                    for i in 2..array.len() {
+                        let arg = match &array[i] {
+                            Frame::Bulk(Some(bytes)) => bytes,
+                            frame => {
+                                return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
+                            }
+                        };
+                        capabilities.push(String::from_utf8(arg.to_vec())?);
+                    }
+                    Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Capabilities(capabilities))))
+                } else {
+                    Err(format!("ERR: Wrong argument for REPLCONF").into())
+                }
+            },
             _ => Ok(Command::Unknown(Unknown::new())),
         }
     }
@@ -305,6 +364,7 @@ impl Command {
             Set(cmd) => cmd.apply(dst, db).await,
             Get(cmd) => cmd.apply(dst, db).await,
             Info(cmd) => cmd.apply(dst, db).await,
+            ReplConf(cmd) => cmd.apply(dst, db).await,
         }
     }
 }
