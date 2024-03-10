@@ -57,6 +57,14 @@ impl ReplicationInfo {
             self.repl_backlog_histlen
         ))
     }
+
+    pub fn get_replication_id(&self) -> String {
+        self.master_replication_id.clone()
+    }
+
+    pub fn get_replication_offset(&self) -> u64 {
+        self.master_repl_offset
+    }
 }
 
 // ReplicationWorker is responsible for managing the replication behaviour of the server.

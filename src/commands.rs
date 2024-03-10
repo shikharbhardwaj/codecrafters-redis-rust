@@ -187,6 +187,42 @@ impl ReplConf {
 
 
 #[derive(Debug)]
+pub struct Psync {
+    replication_id: String,
+    _replication_offset: i64,
+}
+
+impl Psync {
+    pub fn new(replication_id: String, _replication_offset: i64) -> Psync {
+        Psync {
+            replication_id,
+            _replication_offset,
+        }
+    }
+
+    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+        let db = db.lock().await;
+
+        let repl_info = db.get_replication_info();
+
+        if repl_info.get_replication_id() != self.replication_id {
+            // Full resync
+            dst.write_frame(
+                &Frame::Simple(format!(
+                    "FULLRESYNC {} {}",
+                    repl_info.get_replication_id(),
+                    repl_info.get_replication_offset()))).await?;
+        } else {
+            // Partial sync
+            // ...
+        }
+
+        Ok(())
+    }
+}
+
+
+#[derive(Debug)]
 pub enum Command {
     Ping(Ping),
     CommandList(CommandList),
@@ -196,6 +232,7 @@ pub enum Command {
     Get(Get),
     Info(Info),
     ReplConf(ReplConf),
+    Psync(Psync),
 }
 
 impl Command {
@@ -349,6 +386,23 @@ impl Command {
                     Err(format!("ERR: Wrong argument for REPLCONF").into())
                 }
             },
+            "psync" => {
+                if array.len() != 3 {
+                    return Err(format!("ERR: Wrong number of arguments for PSYNC").into());
+                }
+
+                let replication_id = match &array[1] {
+                    Frame::Bulk(Some(bytes)) => String::from_utf8(bytes.to_vec())?,
+                    frame => return Err(format!("ERR: Wrong argument for PSYNC, got {:?}", frame).into())
+                };
+
+                let replication_offset = match &array[2] {
+                    Frame::Bulk(Some(bytes)) => String::from_utf8(bytes.to_vec())?.parse::<i64>()?,
+                    frame => return Err(format!("ERR: Wrong argument for PSYNC, got {:?}", frame).into())
+                };
+
+                Ok(Command::Psync(Psync::new(replication_id, replication_offset)))
+            },
             _ => Ok(Command::Unknown(Unknown::new())),
         }
     }
@@ -365,6 +419,7 @@ impl Command {
             Get(cmd) => cmd.apply(dst, db).await,
             Info(cmd) => cmd.apply(dst, db).await,
             ReplConf(cmd) => cmd.apply(dst, db).await,
+            Psync(cmd) => cmd.apply(dst, db).await,
         }
     }
 }
