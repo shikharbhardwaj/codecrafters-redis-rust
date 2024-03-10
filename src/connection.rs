@@ -130,6 +130,14 @@ impl Connection {
                 self.stream.write_all(val.as_bytes()).await?;
                 self.stream.write_all(DELIM).await?;
             },
+            Frame::File(contents) => {
+                let len = contents.len();
+                self.stream.write_u8(b'$').await?;
+                self.write_decimal(len as u64).await?;
+                self.stream.write_all(DELIM).await?;
+
+                self.stream.write_all(contents).await?;
+            },
             _ => {}
         }
 

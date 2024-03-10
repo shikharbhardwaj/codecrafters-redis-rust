@@ -17,6 +17,7 @@ pub enum Frame {
     Bulk(Option<Bytes>),
     Null,
     Array(Vec<Frame>),
+    File(Bytes),
 }
 
 #[derive(Debug)]

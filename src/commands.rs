@@ -212,6 +212,9 @@ impl Psync {
                     "FULLRESYNC {} {}",
                     repl_info.get_replication_id(),
                     repl_info.get_replication_offset()))).await?;
+            
+            // TODO: Send the actual RDB snapshot.
+            dst.write_frame(&Frame::File(Bytes::from(crate::EMPTY_RDB_FILE_BYTES))).await?;
         } else {
             // Partial sync
             // ...
