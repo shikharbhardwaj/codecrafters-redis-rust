@@ -3,7 +3,7 @@ mod log;
 mod connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use connection::Connection;
+pub use connection::{Connection, ConnectionManager};
 
 pub mod frame;
 pub use frame::Frame;

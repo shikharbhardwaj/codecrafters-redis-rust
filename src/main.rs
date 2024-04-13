@@ -1,9 +1,9 @@
 use std::env;
 use std::sync::Arc;
 
-use redis_starter_rust::{Command, Connection, Frame, RedisState, ReplicationWorker, SharedRedisState};
+use redis_starter_rust::{Command, ConnectionManager, Frame, RedisState, ReplicationWorker, SharedRedisState};
 
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 mod log;
@@ -50,6 +50,7 @@ async fn main() {
 
     info!("Listening on port: {}", args.port);
 
+    let connection_manager = ConnectionManager::new();
     let shared_db = Arc::new(
         Mutex::new(RedisState::new(args.replicaof.clone(), args.port)));
 
@@ -67,14 +68,16 @@ async fn main() {
 
 
     loop {
-        let (socket, _) = listener.accept().await.unwrap();
+        let (socket, addr) = listener.accept().await.unwrap();
         info!("Accepted connection");
 
         let db = shared_db.clone();
+        let conn_manager = connection_manager.clone();
+        conn_manager.add(addr.to_string(), socket).await;
 
         tokio::spawn(
             async move {
-                let res = handle_conn(socket, db).await;
+                let res = handle_conn(addr.to_string(), db, &conn_manager).await;
                 if res.is_err() {
                     error!("Error reading frame! {:?} ", res.err());
                 }
@@ -85,15 +88,23 @@ async fn main() {
 
 
 
-async fn handle_conn(socket: TcpStream, db: SharedRedisState) -> redis_starter_rust::Result<()> {
-    let mut conn = Connection::new(socket);
-    
-    while let Some(frame) = conn.read_frame().await? {
+// Request lifecyle (all within this function):
+// 1. Read a frame from the connection.
+// 2. Parse the frame into a command.
+// 3. Apply the command to the database.
+// 4. Write the result of the command to the connection.
+
+// For replication, we need to refactor request lifecycle to an async loop
+// 1. Accept connection and add to a list of connections
+// 2. For each accepted connection, launch a new task to handle the connection
+// 3. Repeat current request lifecycle in the new task
+async fn handle_conn(addr: String, db: SharedRedisState, conn_manager: &ConnectionManager) -> redis_starter_rust::Result<()> {
+    while let Some(frame) = conn_manager.clone().read_frame(addr.clone()).await? {
         debug!("Got frame: {:?}", frame);
 
         match Command::from_frame(frame) {
-            Ok(cmd) => cmd.apply(& mut conn, db.clone()).await?,
-            Err(err) => conn.write_frame(&Frame::Error(err.to_string())).await?
+            Ok(cmd) => cmd.apply(addr.clone(), db.clone(), conn_manager.clone()).await?,
+            Err(err) => conn_manager.write_frame(addr.clone(), &Frame::Error(err.to_string())).await?
         }
     }
 

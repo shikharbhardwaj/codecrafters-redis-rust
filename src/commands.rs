@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{get_unix_ts_millis, warn, Connection, Frame, SharedRedisState};
+use crate::{get_unix_ts_millis, warn, ConnectionManager, Frame, SharedRedisState};
 
 #[derive(Debug)]
 pub struct Ping {}
@@ -10,8 +10,8 @@ impl Ping {
         Ping {}
     }
 
-    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
-        dst.write_frame(&Frame::Simple("PONG".to_string())).await?;
+    pub async fn apply(self, dst_addr: String, _db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
+        conn_manager.write_frame(dst_addr, &Frame::Simple("PONG".to_string())).await?;
         Ok(())
     }
 }
@@ -24,7 +24,7 @@ impl Unknown {
         Unknown {}
     }
 
-    pub async fn apply(self, _dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, _dst_addr: String, _db: SharedRedisState, _conn_manager: ConnectionManager) -> crate::Result<()> {
         // ...
         warn!("Not implemented!");
         Err("Command not supported".into())
@@ -39,8 +39,8 @@ impl CommandList {
         CommandList {}
     }
 
-    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
-        dst.write_frame(&Frame::Array(vec![])).await?;
+    pub async fn apply(self, dst_addr: String, _db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
+        conn_manager.write_frame(dst_addr, &Frame::Array(vec![])).await?;
 
         Ok(())
     }
@@ -56,8 +56,8 @@ impl Echo {
         Echo { arg }
     }
 
-    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
-        dst.write_frame(&Frame::Bulk(Some(self.arg))).await?;
+    pub async fn apply(self, dst_addr: String, _db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
+        conn_manager.write_frame(dst_addr, &Frame::Bulk(Some(self.arg))).await?;
 
         Ok(())
     }
@@ -79,7 +79,7 @@ impl Set {
         }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
         let mut db = db.lock().await;
 
         if let Some(duration) = self.expiry_duration_millis {
@@ -90,7 +90,7 @@ impl Set {
             db.insert(self.key.clone(), self.val.clone(), None);
         }
 
-        dst.write_frame(&Frame::Simple("OK".to_string())).await?;
+        conn_manager.write_frame(dst_addr, &Frame::Simple("OK".to_string())).await?;
 
         Ok(())
     }
@@ -106,7 +106,7 @@ impl Get {
         Get { key }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
         let mut db = db.lock().await;
 
         let mut valid = false;
@@ -119,14 +119,14 @@ impl Get {
             }
 
             if valid {
-                dst.write_frame(&Frame::Bulk(Some(val.clone()))).await?;
+                conn_manager.write_frame(dst_addr.clone(), &Frame::Bulk(Some(val.clone()))).await?;
             } else {
                 db.remove(&self.key);
             }
         }
 
         if !valid {
-            dst.write_frame(&Frame::Bulk(None)).await?;
+            conn_manager.write_frame(dst_addr, &Frame::Bulk(None)).await?;
         }
 
         Ok(())
@@ -143,15 +143,15 @@ impl Info {
         Info { section }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
         if let Some(section) = self.section {
             match section.as_str() {
                 "replication" => {
                     let db = db.lock().await;
-                    dst.write_frame(&Frame::Bulk(Some(db.get_replication_info().get_info_bytes()))).await?;
+                    conn_manager.write_frame(dst_addr, &Frame::Bulk(Some(db.get_replication_info().get_info_bytes()))).await?;
                 }
                 _ => {
-                    dst.write_frame(&Frame::Error("ERR: Invalid section".to_string())).await?;
+                    conn_manager.write_frame(dst_addr, &Frame::Error("ERR: Invalid section".to_string())).await?;
                 } // Handle all other possible values of section
             }
         } else {
@@ -178,8 +178,8 @@ impl ReplConf {
         ReplConf { option }
     }
 
-    pub async fn apply(self, dst: &mut Connection, _db: SharedRedisState) -> crate::Result<()> {
-        dst.write_frame(&Frame::Simple("OK".to_string())).await?;
+    pub async fn apply(self, dst_addr: String, _db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
+        conn_manager.write_frame(dst_addr, &Frame::Simple("OK".to_string())).await?;
 
         Ok(())
     }
@@ -200,21 +200,21 @@ impl Psync {
         }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
         let db = db.lock().await;
 
         let repl_info = db.get_replication_info();
 
         if repl_info.get_replication_id() != self.replication_id {
             // Full resync
-            dst.write_frame(
+            conn_manager.write_frame(dst_addr.clone(), 
                 &Frame::Simple(format!(
                     "FULLRESYNC {} {}",
                     repl_info.get_replication_id(),
                     repl_info.get_replication_offset()))).await?;
             
             // TODO: Send the actual RDB snapshot.
-            dst.write_frame(&Frame::File(Bytes::from(crate::EMPTY_RDB_FILE_BYTES))).await?;
+            conn_manager.write_frame(dst_addr, &Frame::File(Bytes::from(crate::EMPTY_RDB_FILE_BYTES))).await?;
         } else {
             // Partial sync
             // ...
@@ -410,19 +410,19 @@ impl Command {
         }
     }
 
-    pub async fn apply(self, dst: &mut Connection, db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
         use Command::*;
 
         match self {
-            Ping(cmd) => cmd.apply(dst, db).await,
-            CommandList(cmd) => cmd.apply(dst, db).await,
-            Echo(cmd) => cmd.apply(dst, db).await,
-            Unknown(cmd) => cmd.apply(dst, db).await,
-            Set(cmd) => cmd.apply(dst, db).await,
-            Get(cmd) => cmd.apply(dst, db).await,
-            Info(cmd) => cmd.apply(dst, db).await,
-            ReplConf(cmd) => cmd.apply(dst, db).await,
-            Psync(cmd) => cmd.apply(dst, db).await,
+            Ping(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            CommandList(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Echo(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Unknown(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Set(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Get(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Info(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            ReplConf(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
+            Psync(cmd) => cmd.apply(dst_addr, db, conn_manager).await,
         }
     }
 }

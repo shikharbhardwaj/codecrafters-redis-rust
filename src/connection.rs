@@ -1,8 +1,11 @@
+use std::collections::HashMap;
 use std::io::{Cursor, self};
+use std::sync::Arc;
 
 use bytes::{Buf, BytesMut};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Mutex;
 
 use crate::{debug, DELIM};
 use crate::frame::{self, Frame};
@@ -156,5 +159,64 @@ impl Connection {
         self.stream.write_all(DELIM).await?;
 
         Ok(())
+    }
+}
+
+pub struct ConnectionManager {
+    connections: Arc<Mutex<HashMap<String, Arc<Mutex<Connection>>>>>
+}
+
+impl ConnectionManager {
+    pub fn new() -> Self {
+        ConnectionManager {
+            connections: Arc::new(Mutex::new(HashMap::new()))
+        }
+    }
+
+    pub async fn get(&self, addr: String) -> Option<Arc<Mutex<Connection>>> {
+        let connections = self.connections.lock().await;
+
+        if let Some(conn) = connections.get(&addr) {
+            return Some(conn.clone());
+        }
+
+        None
+    }
+
+    pub async fn add(&self, addr: String, stream: TcpStream) -> Arc<Mutex<Connection>> {
+        let mut connections = self.connections.lock().await;
+
+        let conn = Arc::new(Mutex::new(Connection::new(stream)));
+        connections.insert(addr, conn.clone());
+
+        conn
+    }
+
+    pub async fn read_frame(&self, addr: String) -> crate::Result<Option<Frame>> {
+        let conn = self.get(addr).await;
+
+        if let Some(conn) = conn {
+            let mut conn = conn.lock().await;
+            conn.read_frame().await
+        } else {
+            Err("Connection not found".into())
+        }
+    }
+
+    pub async fn write_frame(&self, addr: String, frame: &Frame) -> io::Result<()> {
+        let conn = self.get(addr).await;
+
+        if let Some(conn) = conn {
+            let mut conn = conn.lock().await;
+            conn.write_frame(frame).await
+        } else {
+            Err(io::Error::new(io::ErrorKind::NotFound, "Connection not found"))
+        }
+    }
+
+    pub fn clone(&self) -> Self {
+        ConnectionManager {
+            connections: self.connections.clone()
+        }
     }
 }
