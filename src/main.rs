@@ -61,7 +61,7 @@ async fn main() {
         let replication_info = shared_db.lock().await.get_replication_info().clone();
         let mut replication_worker = ReplicationWorker::new(replication_info, shared_db.clone());
 
-        replication_worker.start().await.expect("Exited");
+        replication_worker.start().await.err();
     } else {
         loop {
             let (socket, addr) = listener.accept().await.unwrap();
