@@ -61,25 +61,27 @@ async fn main() {
         let replication_info = shared_db.lock().await.get_replication_info().clone();
         let mut replication_worker = ReplicationWorker::new(replication_info, shared_db.clone());
 
-        replication_worker.start().await.expect("Exited!");
-    } else {
-        loop {
-            let (socket, addr) = listener.accept().await.unwrap();
-            info!("Accepted connection");
+        tokio::spawn(async move {
+            replication_worker.start().await.expect("Exited!");
+        });
+    }
 
-            let db = shared_db.clone();
-            let conn_manager = connection_manager.clone();
-            conn_manager.add(addr.to_string(), socket).await;
+    loop {
+        let (socket, addr) = listener.accept().await.unwrap();
+        info!("Accepted connection");
 
-            tokio::spawn(
-                async move {
-                    let res = handle_conn(addr.to_string(), db, &conn_manager).await;
-                    if res.is_err() {
-                        error!("Error reading frame! {:?} ", res.err());
-                    }
+        let db = shared_db.clone();
+        let conn_manager = connection_manager.clone();
+        conn_manager.add(addr.to_string(), socket).await;
+
+        tokio::spawn(
+            async move {
+                let res = handle_conn(addr.to_string(), db, &conn_manager).await;
+                if res.is_err() {
+                    error!("Error reading frame! {:?} ", res.err());
                 }
-            );
-        }
+            }
+        );
     }
 }
 
