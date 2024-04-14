@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{debug, get_unix_ts_millis, warn, ConnectionManager, Frame, SharedRedisState};
+use crate::{debug, get_unix_ts_millis, warn, Connection, ConnectionManager, Frame, SharedRedisState};
 
 #[derive(Debug)]
 pub struct Ping {}
@@ -197,6 +197,7 @@ impl Info {
 pub enum ReplConfOption {
     ListeningPort(String),
     Capabilities(Vec<String>),
+    Ack(String),
 }
 
 #[derive(Debug)]
@@ -214,6 +215,21 @@ impl ReplConf {
         conn_manager.write_frame(dst_addr, &Frame::Simple("OK".to_string())).await?;
 
         Ok(())
+    }
+
+    pub async fn apply_replica(self, dst: & mut Connection, _db: SharedRedisState) -> crate::Result<()> {
+        match self.option {
+            ReplConfOption::Ack(_) => {
+                dst.write_frame(&Frame::Array(vec![
+                    Frame::Bulk(Some(Bytes::from("REPLCONF"))),
+                    Frame::Bulk(Some(Bytes::from("ACK"))),
+                    Frame::Bulk(Some(Bytes::from("0"))),
+                ])).await?;
+
+                Ok(())
+            },
+            _ => { Err(format!("ERR: Invalid REPLCONF option passed to replica.").into()) }
+        }
     }
 }
 
@@ -418,6 +434,12 @@ impl Command {
                         capabilities.push(String::from_utf8(arg.to_vec())?);
                     }
                     Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Capabilities(capabilities))))
+                } else if arg == "ack" {
+                    let arg = match &array[2] {
+                        Frame::Bulk(Some(bytes)) => bytes,
+                        frame => return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
+                    };
+                    Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Ack(String::from_utf8(arg.to_vec())?))))
                 } else {
                     Err(format!("ERR: Wrong argument for REPLCONF").into())
                 }

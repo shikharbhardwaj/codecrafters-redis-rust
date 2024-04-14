@@ -116,6 +116,9 @@ impl ReplicationWorker {
 
             match Command::from_frame(frame) {
                 Ok(Command::Set(cmd)) => cmd.apply_replica(self.db.clone()).await?,
+                Ok(Command::ReplConf(cmd)) => {
+                    cmd.apply_replica(conn, self.db.clone()).await?;
+                },
                 _ => {
                     debug!("Encountered error while replaying replicated command")
                 }, // TODO: Error handling?
