@@ -119,8 +119,8 @@ impl ReplicationWorker {
                 Ok(Command::ReplConf(cmd)) => {
                     cmd.apply_replica(conn, self.db.clone()).await?;
                 },
-                _ => {
-                    debug!("Encountered error while replaying replicated command")
+                e => {
+                    debug!("Encountered error while replaying replicated command: {:?}", e)
                 }, // TODO: Error handling?
             }
         }

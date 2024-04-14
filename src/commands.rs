@@ -197,7 +197,7 @@ impl Info {
 pub enum ReplConfOption {
     ListeningPort(String),
     Capabilities(Vec<String>),
-    Ack(String),
+    GetAck(String),
 }
 
 #[derive(Debug)]
@@ -219,7 +219,7 @@ impl ReplConf {
 
     pub async fn apply_replica(self, dst: & mut Connection, _db: SharedRedisState) -> crate::Result<()> {
         match self.option {
-            ReplConfOption::Ack(_) => {
+            ReplConfOption::GetAck(_) => {
                 dst.write_frame(&Frame::Array(vec![
                     Frame::Bulk(Some(Bytes::from("REPLCONF"))),
                     Frame::Bulk(Some(Bytes::from("ACK"))),
@@ -434,12 +434,12 @@ impl Command {
                         capabilities.push(String::from_utf8(arg.to_vec())?);
                     }
                     Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Capabilities(capabilities))))
-                } else if arg == "ack" {
+                } else if arg == "getack" {
                     let arg = match &array[2] {
                         Frame::Bulk(Some(bytes)) => bytes,
                         frame => return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
                     };
-                    Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Ack(String::from_utf8(arg.to_vec())?))))
+                    Ok(Command::ReplConf(ReplConf::new(ReplConfOption::GetAck(String::from_utf8(arg.to_vec())?))))
                 } else {
                     Err(format!("ERR: Wrong argument for REPLCONF").into())
                 }
