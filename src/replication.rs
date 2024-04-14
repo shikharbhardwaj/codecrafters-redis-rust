@@ -111,7 +111,7 @@ impl ReplicationWorker {
         let conn = self.connection.as_mut().unwrap();
 
         debug!("Start waiting for frames");
-        while let Some(frame) = conn.read_frame().await? {
+        while let Some(frame) = conn.read_frame(false).await? {
             debug!("Got frame: {:?}", frame);
 
             match Command::from_frame(frame) {
@@ -138,7 +138,7 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("PING"))),
         ])).await?;
 
-        if let Some(pong) = conn.read_frame().await? {
+        if let Some(pong) = conn.read_frame(false).await? {
             if let Frame::Simple(pong) = pong {
                 assert!(pong.to_lowercase() == "pong");
                 info!("Received response: {}", pong);
@@ -153,7 +153,7 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from(self.replication_info.listening_port.clone()))),
         ])).await?;
 
-        if let Some(ok) = conn.read_frame().await? {
+        if let Some(ok) = conn.read_frame(false).await? {
             if let Frame::Simple(ok) = ok {
                 assert!(ok.to_lowercase() == "ok");
                 info!("Received response: {}", ok);
@@ -168,7 +168,7 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("psync2"))),
         ])).await?;
 
-        if let Some(ok) = conn.read_frame().await? {
+        if let Some(ok) = conn.read_frame(false).await? {
             if let Frame::Simple(ok) = ok {
                 assert!(ok.to_lowercase() == "ok");
                 info!("Received response: {}", ok);
@@ -183,7 +183,7 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("-1"))),
         ])).await?;
 
-        if let Some(resync) = conn.read_frame().await? {
+        if let Some(resync) = conn.read_frame(false).await? {
             if let Frame::Simple(resync) = resync {
                 info!("Received response: {}", resync);
             } else {
@@ -191,9 +191,9 @@ impl ReplicationWorker {
             }
         }
 
-        if let Some(rdb) = conn.read_frame().await? {
-            if let Frame::Bulk(rdb) = rdb {
-                info!("Received RDB file of size: {:?}", rdb.expect("msg").len());
+        if let Some(rdb) = conn.read_frame(true).await? {
+            if let Frame::File(rdb) = rdb {
+                info!("Received RDB file of size: {:?}", rdb.len());
             } else {
                 return Err("Did not get RDB file from master".into());
             }

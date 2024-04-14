@@ -61,7 +61,7 @@ async fn main() {
         let replication_info = shared_db.lock().await.get_replication_info().clone();
         let mut replication_worker = ReplicationWorker::new(replication_info, shared_db.clone());
 
-        replication_worker.start().await.err();
+        replication_worker.start().await.expect("Exited!");
     } else {
         loop {
             let (socket, addr) = listener.accept().await.unwrap();
@@ -97,7 +97,7 @@ async fn main() {
 // 3. Repeat current request lifecycle in the new task
 async fn handle_conn(addr: String, db: SharedRedisState, conn_manager: &ConnectionManager) -> redis_starter_rust::Result<()> {
     debug!("Start handling conn: {}", addr);
-    while let Some(frame) = conn_manager.clone().read_frame(addr.clone()).await? {
+    while let Some(frame) = conn_manager.clone().read_frame(addr.clone(), false).await? {
         debug!("Got frame: {:?}", frame);
 
         match Command::from_frame(frame) {

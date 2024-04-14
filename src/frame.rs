@@ -31,7 +31,7 @@ pub enum Error {
 
 impl Frame {
     /// Checks if the buffer has enough data to decode a frame.
-    pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
+    pub fn check(src: &mut Cursor<&[u8]>, expect_file: bool) -> Result<(), Error> {
         match get_u8(src)? {
             b'$' => { // RESP string.
                 let len: usize = get_decimal(src)?.try_into()?;
@@ -42,7 +42,7 @@ impl Frame {
                 let len: usize = get_decimal(src)?.try_into()?;
 
                 for _ in 0..len {
-                    Frame::check(src)?;
+                    Frame::check(src, expect_file)?;
                 }
 
                 Ok(())
@@ -56,7 +56,7 @@ impl Frame {
     }
 
     /// Parses the buffer into a Frame.
-    pub fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, Error> {
+    pub fn parse(src: &mut Cursor<&[u8]>, expect_file: bool) -> Result<Frame, Error> {
         debug!("Frame::parse(): Start");
         match get_u8(src)? {
             b'$' => { // RESP string.
@@ -65,7 +65,10 @@ impl Frame {
 
                 debug!("Parsing decimal string with length: {}", len);
 
-                let n = len + 2;
+                let n = match expect_file {
+                    false => len + 2,
+                    _ => len,
+                };
 
                 if src.remaining() < n {
                     debug!("Had {} remaining elements, needed {}", src.remaining(), n);
@@ -76,9 +79,13 @@ impl Frame {
                 std::io::Read::take(&mut src.by_ref(), len as u64).read_exact(&mut buffer).unwrap();
 
                 // Skip the delimiter.
-                skip(src, 2)?;
+                if !expect_file {
+                    skip(src, 2)?;
 
-                Ok(Frame::Bulk(Some(buffer.into())))
+                    Ok(Frame::Bulk(Some(buffer.into())))
+                } else {
+                    Ok(Frame::File(buffer.into()))
+                }
             }
             b'*' => { // RESP array.
                 debug!("Frame::parse(): Parsing RESP array");
@@ -88,7 +95,7 @@ impl Frame {
                 
                 for i in 0..len {
                     debug!("Parsing array element: {}", i);
-                    let part = Frame::parse(src)?;
+                    let part = Frame::parse(src, false)?;
                     result.push(part);
                 }
 

@@ -27,12 +27,12 @@ impl ReadConnection {
     /// Read a frame from the connection.
     /// 
     /// Returns `None` if EOF is read.
-    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
+    pub async fn read_frame(&mut self, expect_file: bool) -> crate::Result<Option<Frame>> {
         loop {
             debug!("read_frame(): Start");
 
             // Try to see if we can parse a frame from the current buffer.
-            if let Some(frame) = self.parse_frame()? {
+            if let Some(frame) = self.parse_frame(expect_file)? {
                 debug!("read_frame(): Parsing OK");
                 return Ok(Some(frame));
             }
@@ -57,7 +57,7 @@ impl ReadConnection {
     }
 
     /// Parse a frame to the connection.
-    fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
+    fn parse_frame(&mut self, expect_file: bool) -> crate::Result<Option<Frame>> {
         debug!("parse_frame(): Start");
         use frame::Error::Incomplete;
 
@@ -65,7 +65,7 @@ impl ReadConnection {
 
         debug!("parse_frame(): match");
 
-        match Frame::check(&mut buf) {
+        match Frame::check(&mut buf, expect_file) {
             Ok(_) => {
                 // Get the current position in the buffer.
                 let len = buf.position() as usize;
@@ -74,7 +74,7 @@ impl ReadConnection {
                 buf.set_position(0);
 
                 // Parse the frame out of the buffer.
-                let frame = Frame::parse(&mut buf)?;
+                let frame = Frame::parse(&mut buf, expect_file)?;
 
                 // Advance the buffer past this frame.
                 self.buffer.advance(len);
@@ -153,7 +153,6 @@ impl WriteConnection {
                 self.stream.write_all(DELIM).await?;
 
                 self.stream.write_all(contents).await?;
-                self.stream.write_all(DELIM).await?;
             },
             _ => {}
         }
@@ -191,8 +190,8 @@ impl Connection {
         }
     }
 
-    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
-        self.r_conn.read_frame().await
+    pub async fn read_frame(&mut self, expect_file: bool) -> crate::Result<Option<Frame>> {
+        self.r_conn.read_frame(expect_file).await
     }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
@@ -245,14 +244,14 @@ impl ConnectionManager {
         write_connections.insert(addr, wconn.clone());
     }
 
-    pub async fn read_frame(&self, addr: String) -> crate::Result<Option<Frame>> {
+    pub async fn read_frame(&self, addr: String, expect_file: bool) -> crate::Result<Option<Frame>> {
         let conn = self.get_read_conn(addr).await;
 
         if let Some(conn) = conn {
             debug!("Getting conn lock");
             let mut conn = conn.lock().await;
             debug!("Got conn lock");
-            conn.read_frame().await
+            conn.read_frame(expect_file).await
         } else {
             Err("Connection not found".into())
         }
