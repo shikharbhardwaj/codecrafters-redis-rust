@@ -199,6 +199,8 @@ impl ReplicationWorker {
             }
         }
 
+        conn.write_frame(&Frame::Simple("OK".to_owned())).await?;
+
         Ok(())
     }
 }
