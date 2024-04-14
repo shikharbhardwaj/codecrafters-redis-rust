@@ -36,7 +36,11 @@ impl Frame {
             b'$' => { // RESP string.
                 let len: usize = get_decimal(src)?.try_into()?;
 
-                skip(src, len + 2)
+                if expect_file {
+                    skip(src, len)
+                } else {
+                    skip(src, len + 2)
+                }
             }
             b'*' => { // RESP array.
                 let len: usize = get_decimal(src)?.try_into()?;
