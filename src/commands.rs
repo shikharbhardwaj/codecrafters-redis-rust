@@ -434,7 +434,7 @@ impl Command {
                         capabilities.push(String::from_utf8(arg.to_vec())?);
                     }
                     Ok(Command::ReplConf(ReplConf::new(ReplConfOption::Capabilities(capabilities))))
-                } else if arg == "getack" {
+                } else if arg.to_ascii_lowercase() == "getack" {
                     let arg = match &array[2] {
                         Frame::Bulk(Some(bytes)) => bytes,
                         frame => return Err(format!("ERR: Wrong argument for REPLCONF, got {:?}", frame).into())
