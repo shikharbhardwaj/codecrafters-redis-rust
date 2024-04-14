@@ -150,7 +150,7 @@ impl WriteConnection {
                 let len = contents.len();
                 self.stream.write_u8(b'$').await?;
                 self.write_decimal(len as u64).await?;
-                self.stream.write_all(DELIM).await?;
+                // self.stream.write_all(DELIM).await?;
 
                 self.stream.write_all(contents).await?;
             },
