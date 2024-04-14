@@ -153,6 +153,7 @@ impl WriteConnection {
                 self.stream.write_all(DELIM).await?;
 
                 self.stream.write_all(contents).await?;
+                self.stream.write_all(DELIM).await?;
             },
             _ => {}
         }
