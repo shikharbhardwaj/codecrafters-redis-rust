@@ -59,30 +59,27 @@ async fn main() {
         info!("Replicating to: {}", replicaof);
 
         let replication_info = shared_db.lock().await.get_replication_info().clone();
-        let mut replication_worker = ReplicationWorker::new(replication_info);
+        let mut replication_worker = ReplicationWorker::new(replication_info, shared_db.clone());
 
-        tokio::spawn(async move {
-            let _ = replication_worker.start().await;
-        });
-    }
+        replication_worker.start().await.expect("Exited");
+    } else {
+        loop {
+            let (socket, addr) = listener.accept().await.unwrap();
+            info!("Accepted connection");
 
+            let db = shared_db.clone();
+            let conn_manager = connection_manager.clone();
+            conn_manager.add(addr.to_string(), socket).await;
 
-    loop {
-        let (socket, addr) = listener.accept().await.unwrap();
-        info!("Accepted connection");
-
-        let db = shared_db.clone();
-        let conn_manager = connection_manager.clone();
-        conn_manager.add(addr.to_string(), socket).await;
-
-        tokio::spawn(
-            async move {
-                let res = handle_conn(addr.to_string(), db, &conn_manager).await;
-                if res.is_err() {
-                    error!("Error reading frame! {:?} ", res.err());
+            tokio::spawn(
+                async move {
+                    let res = handle_conn(addr.to_string(), db, &conn_manager).await;
+                    if res.is_err() {
+                        error!("Error reading frame! {:?} ", res.err());
+                    }
                 }
-            }
-        );
+            );
+        }
     }
 }
 
@@ -99,6 +96,7 @@ async fn main() {
 // 2. For each accepted connection, launch a new task to handle the connection
 // 3. Repeat current request lifecycle in the new task
 async fn handle_conn(addr: String, db: SharedRedisState, conn_manager: &ConnectionManager) -> redis_starter_rust::Result<()> {
+    debug!("Start handling conn: {}", addr);
     while let Some(frame) = conn_manager.clone().read_frame(addr.clone()).await? {
         debug!("Got frame: {:?}", frame);
 
@@ -107,6 +105,7 @@ async fn handle_conn(addr: String, db: SharedRedisState, conn_manager: &Connecti
             Err(err) => conn_manager.write_frame(addr.clone(), &Frame::Error(err.to_string())).await?
         }
     }
+    debug!("Done handling conn: {}", addr);
 
     Ok(())
 }

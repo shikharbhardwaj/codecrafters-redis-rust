@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use tokio::net::TcpStream;
 
-use crate::{debug, info, Connection, Frame};
+use crate::{debug, info, Command, Connection, Frame, SharedRedisState};
 
 pub const EMPTY_RDB_FILE_BYTES: &[u8] = &[
     0x52,0x45,0x44,0x49,0x53,0x30,0x30,0x31,0x31,0xfa,0x09,0x72,0x65,0x64,0x69,0x73,
@@ -26,6 +26,7 @@ pub struct ReplicationInfo {
     repl_backlog_histlen: u64,
     reaplicaof_addr: Option<String>,
     listening_port: String,
+    replicas: Vec<String>,
 }
 
 impl ReplicationInfo {
@@ -50,6 +51,7 @@ impl ReplicationInfo {
             repl_backlog_histlen: 0,
             reaplicaof_addr: replicaof,
             listening_port: listening_port,
+            replicas: vec![],
         }
     }
     
@@ -75,17 +77,28 @@ impl ReplicationInfo {
     pub fn get_replication_offset(&self) -> u64 {
         self.master_repl_offset
     }
+
+    pub fn add_replica(&mut self, addr: String) {
+        assert!(self.role == "master");
+        self.replicas.push(addr);
+        self.connected_slaves += 1;
+    }
+
+    pub fn get_replicas(&self) -> Vec<String> {
+        self.replicas.clone()
+    }
 }
 
 // ReplicationWorker is responsible for managing the replication behaviour of the server.
 pub struct ReplicationWorker {
     replication_info: ReplicationInfo,
+    db: SharedRedisState,
     connection: Option<Connection>,
 }
 
 impl ReplicationWorker {
-    pub fn new(replication_info: ReplicationInfo) -> Self {
-        Self { replication_info, connection: None }
+    pub fn new(replication_info: ReplicationInfo, db: SharedRedisState) -> Self {
+        Self { replication_info, db, connection: None }
     }
 
     // Start the replication worker as a background tokio task.
@@ -97,8 +110,16 @@ impl ReplicationWorker {
 
         let conn = self.connection.as_mut().unwrap();
 
+        debug!("Start waiting for frames");
         while let Some(frame) = conn.read_frame().await? {
             debug!("Got frame: {:?}", frame);
+
+            match Command::from_frame(frame) {
+                Ok(Command::Set(cmd)) => cmd.apply_replica(self.db.clone()).await?,
+                _ => {
+                    debug!("Encountered error while replaying replicated command")
+                }, // TODO: Error handling?
+            }
         }
 
         Ok(())
@@ -161,6 +182,22 @@ impl ReplicationWorker {
             Frame::Bulk(Some(Bytes::from("?"))),
             Frame::Bulk(Some(Bytes::from("-1"))),
         ])).await?;
+
+        if let Some(resync) = conn.read_frame().await? {
+            if let Frame::Simple(resync) = resync {
+                info!("Received response: {}", resync);
+            } else {
+                return Err("Did not get OK response from master".into());
+            }
+        }
+
+        if let Some(rdb) = conn.read_frame().await? {
+            if let Frame::Bulk(rdb) = rdb {
+                info!("Received RDB file of size: {:?}", rdb.expect("msg").len());
+            } else {
+                return Err("Did not get RDB file from master".into());
+            }
+        }
 
         Ok(())
     }

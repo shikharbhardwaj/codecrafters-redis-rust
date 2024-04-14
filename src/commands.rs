@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{get_unix_ts_millis, warn, ConnectionManager, Frame, SharedRedisState};
+use crate::{debug, get_unix_ts_millis, warn, ConnectionManager, Frame, SharedRedisState};
 
 #[derive(Debug)]
 pub struct Ping {}
@@ -90,7 +90,39 @@ impl Set {
             db.insert(self.key.clone(), self.val.clone(), None);
         }
 
+        debug!("Replicating SET command");
+        let replicas = db.get_replicas();
+        self.replicate(replicas, &conn_manager).await?;
+        debug!("Done replicating SET command");
+
         conn_manager.write_frame(dst_addr, &Frame::Simple("OK".to_string())).await?;
+
+        Ok(())
+    }
+
+    pub async fn apply_replica(self, db: SharedRedisState) -> crate::Result<()> {
+        let mut db = db.lock().await;
+
+        if let Some(duration) = self.expiry_duration_millis {
+            let ts = get_unix_ts_millis() + duration;
+
+            db.insert(self.key.clone(), self.val.clone(), Some(ts));
+        } else {
+            db.insert(self.key.clone(), self.val.clone(), None);
+        }
+
+        Ok(())
+    }
+
+    async fn replicate(self, replicas: Vec<String>, conn_manager: &ConnectionManager) -> crate::Result<()> {
+        for replica in replicas {
+            debug!("Replicating to replica: {}", replica);
+            conn_manager.write_frame(replica, &Frame::Array(vec![
+                Frame::Bulk(Some(Bytes::from("SET"))),
+                Frame::Bulk(Some(Bytes::from(self.key.clone()))),
+                Frame::Bulk(Some(self.val.clone())),
+            ])).await?;
+        }
 
         Ok(())
     }
@@ -201,7 +233,7 @@ impl Psync {
     }
 
     pub async fn apply(self, dst_addr: String, db: SharedRedisState, conn_manager: ConnectionManager) -> crate::Result<()> {
-        let db = db.lock().await;
+        let mut db = db.lock().await;
 
         let repl_info = db.get_replication_info();
 
@@ -214,7 +246,8 @@ impl Psync {
                     repl_info.get_replication_offset()))).await?;
             
             // TODO: Send the actual RDB snapshot.
-            conn_manager.write_frame(dst_addr, &Frame::File(Bytes::from(crate::EMPTY_RDB_FILE_BYTES))).await?;
+            conn_manager.write_frame(dst_addr.clone(), &Frame::File(Bytes::from(crate::EMPTY_RDB_FILE_BYTES))).await?;
+            db.add_replica(dst_addr.clone());
         } else {
             // Partial sync
             // ...

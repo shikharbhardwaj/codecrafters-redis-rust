@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use std::io::{Cursor, self};
+use std::io::{self, Cursor};
 use std::sync::Arc;
 
 use bytes::{Buf, BytesMut};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
@@ -10,14 +11,14 @@ use tokio::sync::Mutex;
 use crate::{debug, DELIM};
 use crate::frame::{self, Frame};
 
-pub struct Connection {
-    stream: TcpStream,
+pub struct ReadConnection {
+    stream: OwnedReadHalf,
     buffer: BytesMut,
 }
 
-impl Connection {
-    pub fn new(stream: TcpStream) -> Connection {
-        Connection {
+impl ReadConnection {
+    pub fn new(stream: OwnedReadHalf) -> ReadConnection {
+        ReadConnection {
             stream,
             buffer: BytesMut::with_capacity(4096),
         }
@@ -84,6 +85,18 @@ impl Connection {
             Err(e) => Err(e.into()),
         }
     }
+}
+
+pub struct WriteConnection {
+    stream: OwnedWriteHalf,
+}
+
+impl WriteConnection {
+    pub fn new(stream: OwnedWriteHalf) -> WriteConnection {
+        WriteConnection {
+            stream
+        }
+    }
 
     /// Write a frame to the connection.
     pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
@@ -137,7 +150,7 @@ impl Connection {
                 let len = contents.len();
                 self.stream.write_u8(b'$').await?;
                 self.write_decimal(len as u64).await?;
-                // self.stream.write_all(DELIM).await?;
+                self.stream.write_all(DELIM).await?;
 
                 self.stream.write_all(contents).await?;
             },
@@ -162,19 +175,45 @@ impl Connection {
     }
 }
 
+pub struct Connection {
+    w_conn: WriteConnection,
+    r_conn: ReadConnection,
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Connection {
+        let (r, w) = stream.into_split();
+
+        Connection {
+            w_conn: WriteConnection::new(w),
+            r_conn: ReadConnection::new(r),
+        }
+    }
+
+    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
+        self.r_conn.read_frame().await
+    }
+
+    pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
+        self.w_conn.write_frame(frame).await
+    }
+}
+
 pub struct ConnectionManager {
-    connections: Arc<Mutex<HashMap<String, Arc<Mutex<Connection>>>>>
+    read_connections: Arc<Mutex<HashMap<String, Arc<Mutex<ReadConnection>>>>>,
+    write_connections: Arc<Mutex<HashMap<String, Arc<Mutex<WriteConnection>>>>>
 }
 
 impl ConnectionManager {
     pub fn new() -> Self {
         ConnectionManager {
-            connections: Arc::new(Mutex::new(HashMap::new()))
+            read_connections: Arc::new(Mutex::new(HashMap::new())),
+            write_connections: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 
-    pub async fn get(&self, addr: String) -> Option<Arc<Mutex<Connection>>> {
-        let connections = self.connections.lock().await;
+    async fn get_read_conn(&self, addr: String) -> Option<Arc<Mutex<ReadConnection>>> {
+        let connections = self.read_connections.lock().await;
 
         if let Some(conn) = connections.get(&addr) {
             return Some(conn.clone());
@@ -183,20 +222,35 @@ impl ConnectionManager {
         None
     }
 
-    pub async fn add(&self, addr: String, stream: TcpStream) -> Arc<Mutex<Connection>> {
-        let mut connections = self.connections.lock().await;
+    async fn get_write_conn(&self, addr: String) -> Option<Arc<Mutex<WriteConnection>>> {
+        let connections = self.write_connections.lock().await;
 
-        let conn = Arc::new(Mutex::new(Connection::new(stream)));
-        connections.insert(addr, conn.clone());
+        if let Some(conn) = connections.get(&addr) {
+            return Some(conn.clone());
+        }
 
-        conn
+        None
+    }
+
+    pub async fn add(&self, addr: String, stream: TcpStream) {
+        let (rconn, wconn) = stream.into_split();
+
+        let mut read_connections = self.read_connections.lock().await;
+        let rconn = Arc::new(Mutex::new(ReadConnection::new(rconn)));
+        read_connections.insert(addr.clone(), rconn.clone());
+
+        let mut write_connections = self.write_connections.lock().await;
+        let wconn = Arc::new(Mutex::new(WriteConnection::new(wconn)));
+        write_connections.insert(addr, wconn.clone());
     }
 
     pub async fn read_frame(&self, addr: String) -> crate::Result<Option<Frame>> {
-        let conn = self.get(addr).await;
+        let conn = self.get_read_conn(addr).await;
 
         if let Some(conn) = conn {
+            debug!("Getting conn lock");
             let mut conn = conn.lock().await;
+            debug!("Got conn lock");
             conn.read_frame().await
         } else {
             Err("Connection not found".into())
@@ -204,10 +258,14 @@ impl ConnectionManager {
     }
 
     pub async fn write_frame(&self, addr: String, frame: &Frame) -> io::Result<()> {
-        let conn = self.get(addr).await;
+        debug!("Writing to addr: {}", addr);
+        let conn = self.get_write_conn(addr).await;
+        debug!("Got conn");
 
         if let Some(conn) = conn {
+            debug!("Getting conn lock");
             let mut conn = conn.lock().await;
+            debug!("Got conn lock");
             conn.write_frame(frame).await
         } else {
             Err(io::Error::new(io::ErrorKind::NotFound, "Connection not found"))
@@ -216,7 +274,8 @@ impl ConnectionManager {
 
     pub fn clone(&self) -> Self {
         ConnectionManager {
-            connections: self.connections.clone()
+            read_connections: self.read_connections.clone(),
+            write_connections: self.write_connections.clone()
         }
     }
 }

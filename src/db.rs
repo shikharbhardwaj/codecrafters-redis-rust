@@ -36,4 +36,12 @@ impl RedisState {
     pub fn get_replication_info(&self) -> ReplicationInfo {
         self.replication_info.clone()
     }
+    
+    pub fn add_replica(&mut self, addr: String) {
+        self.replication_info.add_replica(addr);
+    }
+    
+    pub fn get_replicas(&self) -> Vec<String> {
+        self.replication_info.get_replicas().clone()
+    }
 }
