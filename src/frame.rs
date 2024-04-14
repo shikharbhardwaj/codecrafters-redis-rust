@@ -128,6 +128,19 @@ impl Frame {
             },
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Frame::Simple(s) => s.len() + 3,
+            Frame::Error(s) => s.len() + 3,
+            Frame::Integer(_) => 0,
+            Frame::Bulk(Some(b)) => b.len() + 5 + b.len().to_string().len(),
+            Frame::Bulk(None) => 5,
+            Frame::Null => 0,
+            Frame::Array(v) => v.iter().map(|f| f.len()).sum::<usize>() + v.len().to_string().len() + 3,
+            Frame::File(b) => b.len() + 1 + b.len().to_string().len(),
+        }
+    }
 }
 
 /// Skip the given number of bytes, return an error if not possible.

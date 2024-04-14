@@ -27,6 +27,7 @@ pub struct ReplicationInfo {
     reaplicaof_addr: Option<String>,
     listening_port: String,
     replicas: Vec<String>,
+    replica_offset_bytes: u64,
 }
 
 impl ReplicationInfo {
@@ -52,6 +53,7 @@ impl ReplicationInfo {
             reaplicaof_addr: replicaof,
             listening_port: listening_port,
             replicas: vec![],
+            replica_offset_bytes: 0,
         }
     }
     
@@ -87,6 +89,14 @@ impl ReplicationInfo {
     pub fn get_replicas(&self) -> Vec<String> {
         self.replicas.clone()
     }
+
+    pub fn get_replica_offset_bytes(&self) -> u64 {
+        self.replica_offset_bytes
+    }
+
+    pub fn add_replica_offset(&mut self, offset: u64) {
+        self.replica_offset_bytes += offset;
+    }
 }
 
 // ReplicationWorker is responsible for managing the replication behaviour of the server.
@@ -112,17 +122,23 @@ impl ReplicationWorker {
 
         debug!("Start waiting for frames");
         while let Some(frame) = conn.read_frame(false).await? {
-            debug!("Got frame: {:?}", frame);
+            debug!("Got frame: {:?}", &frame);
+            let frame_len = frame.len() as u64;
 
             match Command::from_frame(frame) {
-                Ok(Command::Set(cmd)) => cmd.apply_replica(self.db.clone()).await?,
+                Ok(Command::Set(cmd)) => {
+                    cmd.apply_replica(self.db.clone()).await?;
+                }
                 Ok(Command::ReplConf(cmd)) => {
                     cmd.apply_replica(conn, self.db.clone()).await?;
                 },
+                Ok(Command::Ping(_)) => {},
                 e => {
                     debug!("Encountered error while replaying replicated command: {:?}", e)
                 }, // TODO: Error handling?
             }
+            debug!("Adding replica offset: {}", frame_len);
+            self.db.lock().await.add_replica_offset(frame_len);
         }
 
         Ok(())

@@ -44,4 +44,12 @@ impl RedisState {
     pub fn get_replicas(&self) -> Vec<String> {
         self.replication_info.get_replicas().clone()
     }
+
+    pub fn get_replica_offset_bytes(&self) -> u64 {
+        self.replication_info.get_replica_offset_bytes()
+    }
+
+    pub fn add_replica_offset(&mut self, offset: u64) {
+        self.replication_info.add_replica_offset(offset);
+    }
 }

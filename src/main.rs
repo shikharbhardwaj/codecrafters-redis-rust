@@ -100,7 +100,7 @@ async fn main() {
 async fn handle_conn(addr: String, db: SharedRedisState, conn_manager: &ConnectionManager) -> redis_starter_rust::Result<()> {
     debug!("Start handling conn: {}", addr);
     while let Some(frame) = conn_manager.clone().read_frame(addr.clone(), false).await? {
-        debug!("Got frame: {:?}", frame);
+        debug!("Got frame: {:?}, len: {}", frame, frame.len());
 
         match Command::from_frame(frame) {
             Ok(cmd) => cmd.apply(addr.clone(), db.clone(), conn_manager.clone()).await?,

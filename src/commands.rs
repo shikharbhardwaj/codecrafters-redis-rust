@@ -217,13 +217,15 @@ impl ReplConf {
         Ok(())
     }
 
-    pub async fn apply_replica(self, dst: & mut Connection, _db: SharedRedisState) -> crate::Result<()> {
+    pub async fn apply_replica(self, dst: & mut Connection, db: SharedRedisState) -> crate::Result<()> {
+        let db = db.lock().await;
+
         match self.option {
             ReplConfOption::GetAck(_) => {
                 dst.write_frame(&Frame::Array(vec![
                     Frame::Bulk(Some(Bytes::from("REPLCONF"))),
                     Frame::Bulk(Some(Bytes::from("ACK"))),
-                    Frame::Bulk(Some(Bytes::from("0"))),
+                    Frame::Bulk(Some(Bytes::from(db.get_replica_offset_bytes().to_string()))),
                 ])).await?;
 
                 Ok(())
